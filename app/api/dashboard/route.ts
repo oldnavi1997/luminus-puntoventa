@@ -1,0 +1,84 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+
+export async function GET(_req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const [todayDocs, yesterdayDocs, lowStock] = await Promise.all([
+    prisma.saleDocument.findMany({
+      where: {
+        createdAt: { gte: today, lt: tomorrow },
+        status: { in: ["ACCEPTED", "PENDING"] },
+      },
+      select: { total: true, type: true, paymentMethod: true, createdAt: true },
+    }),
+    prisma.saleDocument.findMany({
+      where: {
+        createdAt: { gte: yesterday, lt: today },
+        status: { in: ["ACCEPTED", "PENDING"] },
+      },
+      select: { total: true },
+    }),
+    prisma.product.findMany({
+      where: { active: true, stock: { gt: 0, lte: 5 } },
+      orderBy: { stock: "asc" },
+      take: 8,
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        stock: true,
+        categories: { select: { name: true }, take: 1 },
+      },
+    }),
+  ]);
+
+  const totalVentas     = todayDocs.reduce((s, d) => s + Number(d.total), 0);
+  const countVentas     = todayDocs.length;
+  const totalAyer       = yesterdayDocs.reduce((s, d) => s + Number(d.total), 0);
+  const deltaVentas     = totalAyer > 0 ? ((totalVentas - totalAyer) / totalAyer) * 100 : 0;
+  const ticketPromedio  = countVentas > 0 ? totalVentas / countVentas : 0;
+
+  // Hourly buckets (08-21)
+  const hourly = Array.from({ length: 14 }, (_, i) => {
+    const h = 8 + i;
+    const bucket = todayDocs.filter((d) => new Date(d.createdAt).getHours() === h);
+    return { hour: `${String(h).padStart(2, "0")}`, total: bucket.reduce((s, d) => s + Number(d.total), 0) };
+  });
+
+  return NextResponse.json({
+    totalVentas,
+    countVentas,
+    ticketPromedio,
+    margenEstimado: totalVentas * 0.28,
+    deltaVentas,
+    byType: {
+      boletas:  todayDocs.filter((d) => d.type === "BOLETA").length,
+      facturas: todayDocs.filter((d) => d.type === "FACTURA").length,
+    },
+    byMethod: {
+      efectivo: todayDocs.filter((d) => d.paymentMethod === "EFECTIVO").reduce((s, d) => s + Number(d.total), 0),
+      tarjeta:  todayDocs.filter((d) => d.paymentMethod === "TARJETA").reduce((s, d) => s + Number(d.total), 0),
+      yape:     todayDocs.filter((d) => d.paymentMethod === "YAPE").reduce((s, d) => s + Number(d.total), 0),
+    },
+    hourly,
+    lowStock: lowStock.map((p) => ({
+      id:       p.id,
+      name:     p.name,
+      sku:      p.sku ?? null,
+      stock:    p.stock,
+      category: p.categories[0]?.name ?? "-",
+    })),
+  });
+}
