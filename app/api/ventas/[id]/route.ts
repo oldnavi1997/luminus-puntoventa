@@ -12,7 +12,7 @@ const PatchSchema = z.object({
     oi: z.object({ sphere: z.string(), cylinder: z.string(), axis: z.string() }),
     add: z.string().optional(),
     pd:  z.string().optional(),
-  }).optional(),
+  }).nullable().optional(),
 });
 
 export async function PATCH(

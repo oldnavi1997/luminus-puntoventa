@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { ChevronDown, ChevronRight, Receipt, X, Trash2, Pencil, Phone, User } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
@@ -67,6 +68,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export function VentasView() {
   const { data: session } = useSession();
+  const router = useRouter();
   const isAdmin = session?.user.role === "ADMIN";
 
   const [docs, setDocs]       = useState<Sale[]>([]);
@@ -345,6 +347,7 @@ export function VentasView() {
           onSuccess={() => {
             setDeleteDoc(null);
             fetchDocs(date);
+            router.refresh();
           }}
         />
       )}
@@ -444,9 +447,9 @@ function EditDatosModal({
     setLoading(true);
     setError("");
     try {
-      const prescription: PrescriptionData | undefined = hasRx
+      const prescription: PrescriptionData | null = hasRx
         ? { od, oi, ...(add ? { add } : {}), ...(pd ? { pd } : {}) }
-        : undefined;
+        : null;
 
       const res = await fetch(`/api/ventas/${doc.id}`, {
         method: "PATCH",
