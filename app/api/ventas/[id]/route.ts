@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/app/generated/prisma/client";
 import { z } from "zod";
 
 const PatchSchema = z.object({
@@ -37,7 +38,9 @@ export async function PATCH(
     data: {
       ...(parsed.data.buyerName !== undefined && { buyerName: parsed.data.buyerName }),
       ...(parsed.data.buyerPhone !== undefined && { buyerPhone: parsed.data.buyerPhone }),
-      ...(parsed.data.prescription !== undefined && { prescription: parsed.data.prescription }),
+      ...(parsed.data.prescription !== undefined && {
+        prescription: parsed.data.prescription === null ? Prisma.JsonNull : parsed.data.prescription,
+      }),
     },
   });
 
