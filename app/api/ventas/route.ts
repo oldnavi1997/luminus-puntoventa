@@ -84,7 +84,12 @@ const ItemSchema = z.object({
 const VentaSchema = z.object({
   posSessionId: z.string(),
   items: z.array(ItemSchema).min(1),
-  paymentMethod: z.enum(["EFECTIVO", "TARJETA", "YAPE"]),
+  paymentMethod: z.enum(["EFECTIVO", "TARJETA", "YAPE", "MIXTO"]),
+  paymentSplit: z.object({
+    efectivo: z.number().min(0).default(0),
+    tarjeta:  z.number().min(0).default(0),
+    yape:     z.number().min(0).default(0),
+  }).optional(),
   montoRecibido: z.number().optional(),
   discount: z.number().min(0).max(100).default(0),
   docType: z.enum(["BOLETA", "FACTURA", "NOTA_VENTA"]).default("NOTA_VENTA"),
@@ -232,6 +237,9 @@ export async function POST(req: NextRequest) {
           montoRecibido: esAdelanto ? (data.montoAdelanto ?? null) : (data.montoRecibido ?? null),
           cambio: esAdelanto ? null : cambio,
           montoAdelanto: esAdelanto ? (data.montoAdelanto ?? null) : null,
+          montoEfectivo: data.paymentMethod === "MIXTO" ? (data.paymentSplit?.efectivo || null) : null,
+          montoTarjeta:  data.paymentMethod === "MIXTO" ? (data.paymentSplit?.tarjeta  || null) : null,
+          montoYape:     data.paymentMethod === "MIXTO" ? (data.paymentSplit?.yape     || null) : null,
           status: esAdelanto ? DocumentStatus.PARTIAL : (isNotaVenta ? DocumentStatus.ACCEPTED : DocumentStatus.DRAFT),
           items: {
             create: itemsData.map(({ item, product, unitPrice, lensPrice, lineTotal, description }) => {
@@ -259,9 +267,16 @@ export async function POST(req: NextRequest) {
         totalVentas: { increment: montoParaSesion },
         countVentas: { increment: 1 },
       };
-      if (data.paymentMethod === "EFECTIVO") sessionUpdate.totalEfectivo = { increment: montoParaSesion };
-      if (data.paymentMethod === "TARJETA") sessionUpdate.totalTarjeta = { increment: montoParaSesion };
-      if (data.paymentMethod === "YAPE") sessionUpdate.totalYape = { increment: montoParaSesion };
+      if (data.paymentMethod === "MIXTO" && data.paymentSplit) {
+        const split = data.paymentSplit;
+        if (split.efectivo > 0) sessionUpdate.totalEfectivo = { increment: split.efectivo };
+        if (split.tarjeta  > 0) sessionUpdate.totalTarjeta  = { increment: split.tarjeta  };
+        if (split.yape     > 0) sessionUpdate.totalYape     = { increment: split.yape     };
+      } else {
+        if (data.paymentMethod === "EFECTIVO") sessionUpdate.totalEfectivo = { increment: montoParaSesion };
+        if (data.paymentMethod === "TARJETA")  sessionUpdate.totalTarjeta  = { increment: montoParaSesion };
+        if (data.paymentMethod === "YAPE")     sessionUpdate.totalYape     = { increment: montoParaSesion };
+      }
 
       await tx.posSession.update({
         where: { id: data.posSessionId },

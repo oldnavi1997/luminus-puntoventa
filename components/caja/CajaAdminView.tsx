@@ -108,6 +108,8 @@ export function CajaAdminView({ sesiones: initial, sesionesCerradas: initialCerr
       setNextOverride(fondoSiguiente);
       setRetiro("");
       setRetiroOk(true);
+      setSesiones([]);
+      router.refresh();
     } catch (e) {
       setRetiroError(e instanceof Error ? e.message : "Error");
     } finally {

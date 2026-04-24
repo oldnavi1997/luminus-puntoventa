@@ -56,6 +56,7 @@ enum PaymentMethod {
   EFECTIVO
   TARJETA
   YAPE
+  MIXTO
 }
 
 enum SessionStatus {
@@ -264,6 +265,9 @@ model SaleDocument {
   montoRecibido  Decimal?       @db.Decimal(10, 2)
   cambio         Decimal?       @db.Decimal(10, 2)
   montoAdelanto        Decimal?       @db.Decimal(10, 2)
+  montoEfectivo        Decimal?       @db.Decimal(10, 2)
+  montoTarjeta         Decimal?       @db.Decimal(10, 2)
+  montoYape            Decimal?       @db.Decimal(10, 2)
   saldoCobradoPorId    String?
   saldoCobradoPor      User?          @relation("DocumentSaldoCobrador", fields: [saldoCobradoPorId], references: [id])
   buyerPhone     String?

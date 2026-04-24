@@ -38,8 +38,8 @@ export async function POST(req: NextRequest) {
   const efectivoDisponible = fondoAnterior + Number(ventasEfectivo._sum.total ?? 0);
   const montoRetirado = Math.max(0, efectivoDisponible - parsed.data.montoQueQueda);
 
-  await prisma.$transaction([
-    prisma.cajaConfig.upsert({
+  await prisma.$transaction(async (tx) => {
+    await tx.cajaConfig.upsert({
       where: { id: "main" },
       create: {
         id: "main",
@@ -52,15 +52,33 @@ export async function POST(req: NextRequest) {
         lastRetiroAt: now,
         lastRetiroFondo: parsed.data.montoQueQueda,
       },
-    }),
-    prisma.cajaRetiro.create({
+    });
+
+    await tx.cajaRetiro.create({
       data: {
         montoRetirado,
         fondoQueQueda: parsed.data.montoQueQueda,
         registradoBy: session.user.id,
       },
-    }),
-  ]);
+    });
+
+    // Cerrar todas las sesiones activas para que los cajeros reabran con el nuevo fondo
+    const openSessions = await tx.posSession.findMany({
+      where: { status: "OPEN" },
+      select: { id: true, openingBalance: true, totalEfectivo: true },
+    });
+    for (const s of openSessions) {
+      await tx.posSession.update({
+        where: { id: s.id },
+        data: {
+          status: "CLOSED",
+          closedAt: now,
+          closingBalance: Number(s.openingBalance) + Number(s.totalEfectivo),
+          notes: "Cerrada por retiro de caja",
+        },
+      });
+    }
+  });
 
   return NextResponse.json({ ok: true, montoQueQueda: parsed.data.montoQueQueda });
 

@@ -46,6 +46,7 @@ const METHOD_LABEL: Record<string, string> = {
   EFECTIVO: "Efectivo",
   TARJETA:  "Tarjeta",
   YAPE:     "Yape",
+  MIXTO:    "Mixto",
 };
 
 const STATUS_COLOR: Record<string, string> = {

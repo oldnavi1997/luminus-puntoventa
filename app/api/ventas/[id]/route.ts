@@ -77,9 +77,15 @@ export async function DELETE(
         totalVentas: { decrement: montoRegistrado },
         countVentas: { decrement: 1 },
       };
-      if (doc.paymentMethod === "EFECTIVO") sessionDecrement.totalEfectivo = { decrement: montoRegistrado };
-      if (doc.paymentMethod === "TARJETA")  sessionDecrement.totalTarjeta  = { decrement: montoRegistrado };
-      if (doc.paymentMethod === "YAPE")     sessionDecrement.totalYape     = { decrement: montoRegistrado };
+      if (doc.paymentMethod === "MIXTO") {
+        if (Number(doc.montoEfectivo) > 0) sessionDecrement.totalEfectivo = { decrement: Number(doc.montoEfectivo) };
+        if (Number(doc.montoTarjeta)  > 0) sessionDecrement.totalTarjeta  = { decrement: Number(doc.montoTarjeta)  };
+        if (Number(doc.montoYape)     > 0) sessionDecrement.totalYape     = { decrement: Number(doc.montoYape)     };
+      } else {
+        if (doc.paymentMethod === "EFECTIVO") sessionDecrement.totalEfectivo = { decrement: montoRegistrado };
+        if (doc.paymentMethod === "TARJETA")  sessionDecrement.totalTarjeta  = { decrement: montoRegistrado };
+        if (doc.paymentMethod === "YAPE")     sessionDecrement.totalYape     = { decrement: montoRegistrado };
+      }
 
       await tx.posSession.update({
         where: { id: doc.posSessionId },

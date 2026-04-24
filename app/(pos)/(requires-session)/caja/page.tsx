@@ -21,7 +21,7 @@ export default async function CajaPage() {
     const retiroAt = config?.lastRetiroAt ?? null;
     const fondoActual = Number(config?.lastRetiroFondo ?? 0);
 
-    const [sesionesAbiertas, sesionesCerradasRaw, ventasEfectivo, retirosRaw] = await Promise.all([
+    const [sesionesAbiertas, sesionesCerradasRaw, ventasEfectivo, ventasEfectivoPartial, ventasMixtoEfectivo, retirosRaw] = await Promise.all([
       prisma.posSession.findMany({
         where: { status: "OPEN" },
         include: { user: { select: { name: true, email: true } } },
@@ -32,14 +32,34 @@ export default async function CajaPage() {
         include: { user: { select: { name: true, email: true } } },
         orderBy: { closedAt: "desc" },
       }),
+      // Ventas EFECTIVO completamente cobradas: se usa el total íntegro
       prisma.saleDocument.aggregate({
         where: {
           paymentMethod: "EFECTIVO",
-          status: { notIn: ["VOIDED", "VOID_PENDING"] },
+          status: { notIn: ["VOIDED", "VOID_PENDING", "PARTIAL"] },
           ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
         },
         _sum: { total: true },
         _count: { id: true },
+      }),
+      // Ventas EFECTIVO con adelanto pendiente: solo el adelanto está en caja
+      prisma.saleDocument.aggregate({
+        where: {
+          paymentMethod: "EFECTIVO",
+          status: "PARTIAL",
+          ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
+        },
+        _sum: { montoAdelanto: true },
+        _count: { id: true },
+      }),
+      // Ventas MIXTO: la porción efectivo (cobrada como adelanto o pago completo)
+      prisma.saleDocument.aggregate({
+        where: {
+          paymentMethod: "MIXTO",
+          status: { notIn: ["VOIDED", "VOID_PENDING"] },
+          ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
+        },
+        _sum: { montoEfectivo: true },
       }),
       prisma.cajaRetiro.findMany({
         where: { createdAt: { gte: hoyInicio } },
@@ -47,6 +67,11 @@ export default async function CajaPage() {
         orderBy: { createdAt: "desc" },
       }),
     ]);
+
+    const efectivoVentasTotal = Number(ventasEfectivo._sum.total ?? 0)
+                              + Number(ventasEfectivoPartial._sum.montoAdelanto ?? 0)
+                              + Number(ventasMixtoEfectivo._sum.montoEfectivo ?? 0);
+    const countEfectivoTotal  = ventasEfectivo._count.id + ventasEfectivoPartial._count.id;
 
     const sesiones = sesionesAbiertas.map((s) => ({
       id: s.id,
@@ -93,8 +118,8 @@ export default async function CajaPage() {
         sesiones={sesiones}
         sesionesCerradas={sesionesCerradas}
         nextOverride={nextOverride}
-        efectivoVentas={Number(ventasEfectivo._sum.total ?? 0)}
-        countVentasEfectivo={ventasEfectivo._count.id}
+        efectivoVentas={efectivoVentasTotal}
+        countVentasEfectivo={countEfectivoTotal}
         fondoActual={fondoActual}
         ultimoRetiroAt={retiroAt?.toISOString() ?? null}
         retiros={retiros}
