@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
       id: r.id,
       montoRetirado: Number(r.montoRetirado),
       fondoQueQueda: Number(r.fondoQueQueda),
+      location: r.location,
       createdAt: r.createdAt.toISOString(),
       registradoPor: r.registradoPor,
     })),

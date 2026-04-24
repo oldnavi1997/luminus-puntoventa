@@ -19,16 +19,27 @@ export async function GET(_req: NextRequest) {
     prisma.saleDocument.findMany({
       where: {
         createdAt: { gte: today, lt: tomorrow },
-        status: { in: ["ACCEPTED", "PENDING"] },
+        status: { in: ["ACCEPTED", "PENDING", "PARTIAL"] },
       },
-      select: { total: true, type: true, paymentMethod: true, createdAt: true },
+      select: {
+        total: true,
+        type: true,
+        paymentMethod: true,
+        createdAt: true,
+        location: true,
+        status: true,
+        montoAdelanto: true,
+        montoEfectivo: true,
+        montoTarjeta: true,
+        montoYape: true,
+      },
     }),
     prisma.saleDocument.findMany({
       where: {
         createdAt: { gte: yesterday, lt: today },
-        status: { in: ["ACCEPTED", "PENDING"] },
+        status: { in: ["ACCEPTED", "PENDING", "PARTIAL"] },
       },
-      select: { total: true },
+      select: { total: true, status: true, montoAdelanto: true },
     }),
     prisma.product.findMany({
       where: { active: true, stock: { gt: 0, lte: 5 } },
@@ -39,22 +50,42 @@ export async function GET(_req: NextRequest) {
         name: true,
         sku: true,
         stock: true,
+        stockTienda: true,
+        stockAlmacen: true,
         categories: { select: { name: true }, take: 1 },
       },
     }),
   ]);
 
-  const totalVentas     = todayDocs.reduce((s, d) => s + Number(d.total), 0);
-  const countVentas     = todayDocs.length;
-  const totalAyer       = yesterdayDocs.reduce((s, d) => s + Number(d.total), 0);
-  const deltaVentas     = totalAyer > 0 ? ((totalVentas - totalAyer) / totalAyer) * 100 : 0;
-  const ticketPromedio  = countVentas > 0 ? totalVentas / countVentas : 0;
+  // Helper: monto efectivo de un doc (PARTIAL → solo el adelanto recibido)
+  const montoEfectivo = (d: { status: string; total: { toString(): string }; montoAdelanto: { toString(): string } | null }) =>
+    d.status === "PARTIAL" ? Number(d.montoAdelanto ?? 0) : Number(d.total);
+
+  const totalVentas    = todayDocs.reduce((s, d) => s + montoEfectivo(d), 0);
+  const countVentas    = todayDocs.length;
+  const totalAyer      = yesterdayDocs.reduce((s, d) => s + montoEfectivo(d), 0);
+  const deltaVentas    = totalAyer > 0 ? ((totalVentas - totalAyer) / totalAyer) * 100 : 0;
+  const ticketPromedio = countVentas > 0 ? totalVentas / countVentas : 0;
+
+  // Por ubicación
+  const tiendaDocs  = todayDocs.filter((d) => d.location === "TIENDA");
+  const almacenDocs = todayDocs.filter((d) => d.location === "ALMACEN");
+
+  // Adelantos pendientes (PARTIAL)
+  const partialDocs = todayDocs.filter((d) => d.status === "PARTIAL");
+
+  // Métodos de pago
+  const sumaMethod = (method: string) =>
+    todayDocs.filter((d) => d.paymentMethod === method).reduce((s, d) => s + montoEfectivo(d), 0);
 
   // Hourly buckets (08-21)
   const hourly = Array.from({ length: 14 }, (_, i) => {
     const h = 8 + i;
     const bucket = todayDocs.filter((d) => new Date(d.createdAt).getHours() === h);
-    return { hour: `${String(h).padStart(2, "0")}`, total: bucket.reduce((s, d) => s + Number(d.total), 0) };
+    return {
+      hour: `${String(h).padStart(2, "0")}`,
+      total: bucket.reduce((s, d) => s + montoEfectivo(d), 0),
+    };
   });
 
   return NextResponse.json({
@@ -64,21 +95,34 @@ export async function GET(_req: NextRequest) {
     margenEstimado: totalVentas * 0.28,
     deltaVentas,
     byType: {
-      boletas:  todayDocs.filter((d) => d.type === "BOLETA").length,
-      facturas: todayDocs.filter((d) => d.type === "FACTURA").length,
+      boletas:    todayDocs.filter((d) => d.type === "BOLETA").length,
+      facturas:   todayDocs.filter((d) => d.type === "FACTURA").length,
+      notasVenta: todayDocs.filter((d) => d.type === "NOTA_VENTA").length,
     },
     byMethod: {
-      efectivo: todayDocs.filter((d) => d.paymentMethod === "EFECTIVO").reduce((s, d) => s + Number(d.total), 0),
-      tarjeta:  todayDocs.filter((d) => d.paymentMethod === "TARJETA").reduce((s, d) => s + Number(d.total), 0),
-      yape:     todayDocs.filter((d) => d.paymentMethod === "YAPE").reduce((s, d) => s + Number(d.total), 0),
+      efectivo: sumaMethod("EFECTIVO"),
+      tarjeta:  sumaMethod("TARJETA"),
+      yape:     sumaMethod("YAPE"),
+      mixto:    sumaMethod("MIXTO"),
+    },
+    byLocation: {
+      tienda:  { total: tiendaDocs.reduce((s, d) => s + montoEfectivo(d), 0), count: tiendaDocs.length },
+      almacen: { total: almacenDocs.reduce((s, d) => s + montoEfectivo(d), 0), count: almacenDocs.length },
+    },
+    adelantosPendientes: {
+      count:         partialDocs.length,
+      montoRecibido: partialDocs.reduce((s, d) => s + Number(d.montoAdelanto ?? 0), 0),
+      montoTotal:    partialDocs.reduce((s, d) => s + Number(d.total), 0),
     },
     hourly,
     lowStock: lowStock.map((p) => ({
-      id:       p.id,
-      name:     p.name,
-      sku:      p.sku ?? null,
-      stock:    p.stock,
-      category: p.categories[0]?.name ?? "-",
+      id:           p.id,
+      name:         p.name,
+      sku:          p.sku ?? null,
+      stock:        p.stock,
+      stockTienda:  p.stockTienda,
+      stockAlmacen: p.stockAlmacen,
+      category:     p.categories[0]?.name ?? "-",
     })),
   });
 }

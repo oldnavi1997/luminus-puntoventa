@@ -16,12 +16,28 @@ export default async function CajaPage() {
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
     const hoyInicio = new Date(`${today}T00:00:00-05:00`);
 
-    // 1º obtener config para saber desde cuándo acumular (último retiro)
-    const config = await prisma.cajaConfig.findUnique({ where: { id: "main" } });
-    const retiroAt = config?.lastRetiroAt ?? null;
-    const fondoActual = Number(config?.lastRetiroFondo ?? 0);
+    // 1. Obtener configs por ubicación
+    const [configTienda, configAlmacen] = await Promise.all([
+      prisma.cajaConfig.findUnique({ where: { id: "tienda" } }),
+      prisma.cajaConfig.findUnique({ where: { id: "almacen" } }),
+    ]);
 
-    const [sesionesAbiertas, sesionesCerradasRaw, ventasEfectivo, ventasEfectivoPartial, ventasMixtoEfectivo, retirosRaw] = await Promise.all([
+    const retiroTiendaAt  = configTienda?.lastRetiroAt  ?? null;
+    const retiroAlmacenAt = configAlmacen?.lastRetiroAt ?? null;
+
+    // 2. Datos en paralelo
+    const [
+      sesionesAbiertas,
+      sesionesCerradasRaw,
+      tEfectivo,
+      tEfectivoPartial,
+      tMixtoEfectivo,
+      aEfectivo,
+      aEfectivoPartial,
+      aMixtoEfectivo,
+      retirosTiendaRaw,
+      retirosAlmacenRaw,
+    ] = await Promise.all([
       prisma.posSession.findMany({
         where: { status: "OPEN" },
         include: { user: { select: { name: true, email: true } } },
@@ -32,46 +48,91 @@ export default async function CajaPage() {
         include: { user: { select: { name: true, email: true } } },
         orderBy: { closedAt: "desc" },
       }),
-      // Ventas EFECTIVO completamente cobradas: se usa el total íntegro
+      // TIENDA: efectivo ventas completas
       prisma.saleDocument.aggregate({
         where: {
+          location: "TIENDA",
           paymentMethod: "EFECTIVO",
           status: { notIn: ["VOIDED", "VOID_PENDING", "PARTIAL"] },
-          ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
+          ...(retiroTiendaAt ? { createdAt: { gt: retiroTiendaAt } } : {}),
         },
         _sum: { total: true },
         _count: { id: true },
       }),
-      // Ventas EFECTIVO con adelanto pendiente: solo el adelanto está en caja
+      // TIENDA: adelantos PARTIAL
       prisma.saleDocument.aggregate({
         where: {
+          location: "TIENDA",
           paymentMethod: "EFECTIVO",
           status: "PARTIAL",
-          ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
+          ...(retiroTiendaAt ? { createdAt: { gt: retiroTiendaAt } } : {}),
         },
         _sum: { montoAdelanto: true },
         _count: { id: true },
       }),
-      // Ventas MIXTO: la porción efectivo (cobrada como adelanto o pago completo)
+      // TIENDA: porción efectivo MIXTO
       prisma.saleDocument.aggregate({
         where: {
+          location: "TIENDA",
           paymentMethod: "MIXTO",
           status: { notIn: ["VOIDED", "VOID_PENDING"] },
-          ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
+          ...(retiroTiendaAt ? { createdAt: { gt: retiroTiendaAt } } : {}),
+        },
+        _sum: { montoEfectivo: true },
+      }),
+      // ALMACEN: efectivo ventas completas
+      prisma.saleDocument.aggregate({
+        where: {
+          location: "ALMACEN",
+          paymentMethod: "EFECTIVO",
+          status: { notIn: ["VOIDED", "VOID_PENDING", "PARTIAL"] },
+          ...(retiroAlmacenAt ? { createdAt: { gt: retiroAlmacenAt } } : {}),
+        },
+        _sum: { total: true },
+        _count: { id: true },
+      }),
+      // ALMACEN: adelantos PARTIAL
+      prisma.saleDocument.aggregate({
+        where: {
+          location: "ALMACEN",
+          paymentMethod: "EFECTIVO",
+          status: "PARTIAL",
+          ...(retiroAlmacenAt ? { createdAt: { gt: retiroAlmacenAt } } : {}),
+        },
+        _sum: { montoAdelanto: true },
+        _count: { id: true },
+      }),
+      // ALMACEN: porción efectivo MIXTO
+      prisma.saleDocument.aggregate({
+        where: {
+          location: "ALMACEN",
+          paymentMethod: "MIXTO",
+          status: { notIn: ["VOIDED", "VOID_PENDING"] },
+          ...(retiroAlmacenAt ? { createdAt: { gt: retiroAlmacenAt } } : {}),
         },
         _sum: { montoEfectivo: true },
       }),
       prisma.cajaRetiro.findMany({
-        where: { createdAt: { gte: hoyInicio } },
+        where: { createdAt: { gte: hoyInicio }, location: "TIENDA" },
+        include: { registradoPor: { select: { name: true, email: true } } },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.cajaRetiro.findMany({
+        where: { createdAt: { gte: hoyInicio }, location: "ALMACEN" },
         include: { registradoPor: { select: { name: true, email: true } } },
         orderBy: { createdAt: "desc" },
       }),
     ]);
 
-    const efectivoVentasTotal = Number(ventasEfectivo._sum.total ?? 0)
-                              + Number(ventasEfectivoPartial._sum.montoAdelanto ?? 0)
-                              + Number(ventasMixtoEfectivo._sum.montoEfectivo ?? 0);
-    const countEfectivoTotal  = ventasEfectivo._count.id + ventasEfectivoPartial._count.id;
+    const tiendaEfectivoVentas = Number(tEfectivo._sum.total ?? 0)
+                               + Number(tEfectivoPartial._sum.montoAdelanto ?? 0)
+                               + Number(tMixtoEfectivo._sum.montoEfectivo ?? 0);
+    const tiendaCount = tEfectivo._count.id + tEfectivoPartial._count.id;
+
+    const almacenEfectivoVentas = Number(aEfectivo._sum.total ?? 0)
+                                + Number(aEfectivoPartial._sum.montoAdelanto ?? 0)
+                                + Number(aMixtoEfectivo._sum.montoEfectivo ?? 0);
+    const almacenCount = aEfectivo._count.id + aEfectivoPartial._count.id;
 
     const sesiones = sesionesAbiertas.map((s) => ({
       id: s.id,
@@ -101,28 +162,37 @@ export default async function CajaPage() {
       user: s.user,
     }));
 
-    const nextOverride = config?.nextOpeningOverride != null
-      ? Number(config.nextOpeningOverride)
-      : null;
-
-    const retiros = retirosRaw.map((r) => ({
-      id: r.id,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mapRetiro = (r: any) => ({
+      id: r.id as string,
       montoRetirado: Number(r.montoRetirado),
       fondoQueQueda: Number(r.fondoQueQueda),
-      createdAt: r.createdAt.toISOString(),
-      registradoPor: r.registradoPor,
-    }));
+      location: r.location as string,
+      createdAt: (r.createdAt as Date).toISOString(),
+      registradoPor: r.registradoPor as { name: string | null; email: string },
+    });
 
     return (
       <CajaAdminView
         sesiones={sesiones}
         sesionesCerradas={sesionesCerradas}
-        nextOverride={nextOverride}
-        efectivoVentas={efectivoVentasTotal}
-        countVentasEfectivo={countEfectivoTotal}
-        fondoActual={fondoActual}
-        ultimoRetiroAt={retiroAt?.toISOString() ?? null}
-        retiros={retiros}
+        tienda={{
+          efectivoVentas: tiendaEfectivoVentas,
+          fondoActual: Number(configTienda?.lastRetiroFondo ?? 0),
+          ultimoRetiroAt: configTienda?.lastRetiroAt?.toISOString() ?? null,
+          nextOverride: configTienda?.nextOpeningOverride != null
+            ? Number(configTienda.nextOpeningOverride)
+            : null,
+          countVentasEfectivo: tiendaCount,
+          retiros: retirosTiendaRaw.map(mapRetiro),
+        }}
+        almacen={{
+          efectivoVentas: almacenEfectivoVentas,
+          fondoActual: Number(configAlmacen?.lastRetiroFondo ?? 0),
+          ultimoRetiroAt: configAlmacen?.lastRetiroAt?.toISOString() ?? null,
+          countVentasEfectivo: almacenCount,
+          retiros: retirosAlmacenRaw.map(mapRetiro),
+        }}
       />
     );
   }

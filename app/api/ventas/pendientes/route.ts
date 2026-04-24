@@ -106,6 +106,7 @@ export async function POST(req: NextRequest) {
         paymentMethod: data.paymentMethod,
         montoAdelanto: data.montoAdelanto,
         montoRecibido: data.montoAdelanto,
+        location:      "ALMACEN",
       },
     });
 

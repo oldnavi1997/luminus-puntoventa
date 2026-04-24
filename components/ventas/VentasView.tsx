@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ChevronDown, ChevronRight, Receipt, X, Trash2, Pencil, Phone, User } from "lucide-react";
+import { ChevronDown, ChevronRight, Receipt as ReceiptIcon, X, Trash2, Pencil, Phone, User, Printer } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
+import { Receipt } from "@/components/pos/Receipt";
 import type { PrescriptionData } from "@/types";
 
 interface SaleItem {
@@ -29,6 +30,8 @@ interface Sale {
   buyerName: string | null;
   buyerPhone?: string | null;
   montoAdelanto?: number | null;
+  notes?: string | null;
+  location: string;
   prescription?: PrescriptionData | null;
   createdAt: string;
   cashier: { name: string | null };
@@ -77,8 +80,10 @@ export function VentasView() {
   const [loading, setLoading] = useState(true);
   const [date, setDate]       = useState(() => new Date().toISOString().slice(0, 10));
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [locationFilter, setLocationFilter] = useState<"ALL" | "TIENDA" | "ALMACEN">("ALL");
   const [deleteDoc, setDeleteDoc]   = useState<Sale | null>(null);
   const [editingDoc, setEditingDoc] = useState<Sale | null>(null);
+  const [printDoc,  setPrintDoc]    = useState<Sale | null>(null);
 
   function fetchDocs(d: string) {
     setLoading(true);
@@ -103,7 +108,9 @@ export function VentasView() {
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const hasAdelantos = docs.some((d) => d.montoAdelanto != null);
+  const filteredDocs = locationFilter === "ALL" ? docs : docs.filter((d) => d.location === locationFilter);
+  const hasAdelantos = filteredDocs.some((d) => d.montoAdelanto != null);
+  const hasMultipleLocations = docs.some((d) => d.location === "ALMACEN");
 
   return (
     <div className="flex flex-col h-full">
@@ -143,14 +150,31 @@ export function VentasView() {
                 Hoy
               </button>
             )}
-            <span className="text-[12.5px] text-ink-3 ml-auto">{docs.length} ventas</span>
+            {hasMultipleLocations && (
+              <div className="flex gap-1 bg-surface-light border border-border rounded-lg p-0.5">
+                {(["ALL", "TIENDA", "ALMACEN"] as const).map((loc) => (
+                  <button
+                    key={loc}
+                    onClick={() => setLocationFilter(loc)}
+                    className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
+                      locationFilter === loc
+                        ? "bg-surface shadow-sm text-ink"
+                        : "text-ink-3 hover:text-ink"
+                    }`}
+                  >
+                    {loc === "ALL" ? "Todos" : loc === "TIENDA" ? "Tienda" : "Almacén"}
+                  </button>
+                ))}
+              </div>
+            )}
+            <span className="text-[12.5px] text-ink-3 ml-auto">{filteredDocs.length} ventas</span>
           </div>
 
           {loading ? (
             <div className="p-8 text-center text-ink-3">Cargando ventas...</div>
-          ) : docs.length === 0 ? (
+          ) : filteredDocs.length === 0 ? (
             <div className="p-12 text-center">
-              <Receipt size={32} className="mx-auto text-ink-4 mb-3 opacity-50" />
+              <ReceiptIcon size={32} className="mx-auto text-ink-4 mb-3 opacity-50" />
               <p className="text-[13px] text-ink-3">Sin ventas para esta fecha</p>
             </div>
           ) : (
@@ -167,13 +191,16 @@ export function VentasView() {
                   )}
                   <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Pago</th>
                   <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Estado</th>
+                  {hasMultipleLocations && (
+                    <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Ubicación</th>
+                  )}
                   <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Medida</th>
                   <th className="text-right px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Total</th>
                   <th className="px-4 py-2.5 border-b border-border" />
                 </tr>
               </thead>
               <tbody>
-                {docs.map((doc) => {
+                {filteredDocs.map((doc) => {
                   const open = expanded.has(doc.id);
                   const time = new Date(doc.createdAt).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
                   const hasExtra = doc.buyerPhone || doc.prescription;
@@ -224,6 +251,17 @@ export function VentasView() {
                             {STATUS_LABEL[doc.status] ?? doc.status}
                           </span>
                         </td>
+                        {hasMultipleLocations && (
+                          <td className="px-4 py-3 border-b border-border">
+                            <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                              doc.location === "ALMACEN"
+                                ? "bg-violet-100 text-violet-700"
+                                : "bg-surface-dark text-ink-3"
+                            }`}>
+                              {doc.location === "ALMACEN" ? "Almacén" : "Tienda"}
+                            </span>
+                          </td>
+                        )}
                         <td className="px-4 py-3 border-b border-border">
                           <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
                             doc.prescription ? "bg-accent/10 text-accent" : "bg-surface-dark text-ink-4"
@@ -236,6 +274,13 @@ export function VentasView() {
                         </td>
                         <td className="px-4 py-3 border-b border-border" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1.5 justify-end">
+                            <button
+                              onClick={() => setPrintDoc(doc)}
+                              className="p-1 rounded-lg text-ink-4 hover:text-ink-2 hover:bg-surface-light transition-colors"
+                              title="Imprimir ticket"
+                            >
+                              <Printer size={13} />
+                            </button>
                             <button
                               onClick={() => setEditingDoc(doc)}
                               className={`p-1 rounded-lg transition-colors ${hasExtra ? "text-accent hover:bg-accent/10" : "text-ink-4 hover:text-ink-2 hover:bg-surface-light"}`}
@@ -258,7 +303,7 @@ export function VentasView() {
 
                       {open && (
                         <tr key={`${doc.id}-items`} className="bg-surface-light">
-                          <td colSpan={hasAdelantos ? 10 : 9} className="px-6 py-3 border-b border-border">
+                          <td colSpan={(hasAdelantos ? 10 : 9) + (hasMultipleLocations ? 1 : 0)} className="px-6 py-3 border-b border-border">
                             <table className="w-full">
                               <thead>
                                 <tr>
@@ -352,6 +397,32 @@ export function VentasView() {
           }}
         />
       )}
+
+      {printDoc && (
+        <Receipt
+          document={{
+            id: printDoc.id,
+            fullNumber: printDoc.fullNumber,
+            total: printDoc.total,
+            cambio: 0,
+            montoAdelanto: printDoc.montoAdelanto ?? null,
+            status: printDoc.status,
+            pdfUrl: null,
+            qrCode: null,
+          }}
+          items={printDoc.items.map((i) => ({
+            description: i.description,
+            quantity: i.quantity,
+            unitPrice: i.lineTotal / i.quantity,
+            lineTotal: i.lineTotal,
+            sku: i.sku,
+          }))}
+          buyerName={printDoc.buyerName ?? undefined}
+          paymentMethod={printDoc.paymentMethod}
+          cashierName={printDoc.cashier.name ?? undefined}
+          onClose={() => setPrintDoc(null)}
+        />
+      )}
     </div>
   );
 }
@@ -434,6 +505,7 @@ function EditDatosModal({
 }) {
   const [name, setName]   = useState(doc.buyerName ?? "");
   const [phone, setPhone] = useState(doc.buyerPhone ?? "");
+  const [notes, setNotes] = useState(doc.notes ?? "");
   const [hasRx, setHasRx] = useState(!!doc.prescription);
 
   const [od, setOd] = useState<PrescriptionData["od"]>(doc.prescription?.od ?? { ...EMPTY_EYE });
@@ -458,14 +530,16 @@ function EditDatosModal({
         body: JSON.stringify({
           buyerName:  name.trim() || undefined,
           buyerPhone: phone.trim() || undefined,
+          notes:      notes.trim() || undefined,
           prescription,
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Error al guardar");
       onUpdate({
-        buyerName:   json.buyerName,
-        buyerPhone:  json.buyerPhone,
+        buyerName:    json.buyerName,
+        buyerPhone:   json.buyerPhone,
+        notes:        json.notes,
         prescription: json.prescription,
       });
     } catch (e) {
@@ -509,6 +583,16 @@ function EditDatosModal({
                 placeholder="Ej: 987654321"
                 type="tel"
                 className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[12px] text-ink-3 mb-1">Nota adicional</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Ej: lentes para lejos, entrega el viernes..."
+                rows={3}
+                className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent resize-none"
               />
             </div>
           </div>

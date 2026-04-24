@@ -18,6 +18,7 @@ interface ReceiptProps {
     fullNumber: string;
     total: number;
     cambio?: number;
+    montoAdelanto?: number | null;
     status: string;
     pdfUrl?: string | null;
     qrCode?: string | null;
@@ -67,6 +68,7 @@ function numeroALetras(monto: number): string {
 }
 
 export function Receipt({ document, items, buyerName, buyerDoc, paymentMethod, montoRecibido, cashierName, onClose }: ReceiptProps) {
+  const esAdelanto = document.status === "PARTIAL" && document.montoAdelanto != null;
   const printRef = useRef<HTMLDivElement>(null);
   const handlePrint = useReactToPrint({
     contentRef: printRef,
@@ -215,21 +217,36 @@ export function Receipt({ document, items, buyerName, buyerDoc, paymentMethod, m
                   <td style={{ paddingRight: "4px" }}>TOTAL DE LA VENTA</td>
                   <td style={{ textAlign: "right", fontWeight: "bold" }}>S/ {total.toFixed(2)}</td>
                 </tr>
-                <tr>
-                  <td>TOTAL A PAGAR</td>
-                  <td style={{ textAlign: "right", fontWeight: "bold" }}>S/ {total.toFixed(2)}</td>
-                </tr>
-                {montoRecibido != null && (
-                  <tr>
-                    <td>PAGADO</td>
-                    <td style={{ textAlign: "right" }}>S/ {montoRecibido.toFixed(2)}</td>
-                  </tr>
-                )}
-                {paymentMethod === "EFECTIVO" && document.cambio != null && document.cambio >= 0 && (
-                  <tr>
-                    <td>VUELTO</td>
-                    <td style={{ textAlign: "right" }}>S/ {document.cambio.toFixed(2)}</td>
-                  </tr>
+                {esAdelanto ? (
+                  <>
+                    <tr>
+                      <td>ADELANTO RECIBIDO</td>
+                      <td style={{ textAlign: "right", fontWeight: "bold" }}>S/ {document.montoAdelanto!.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontWeight: "bold" }}>SALDO PENDIENTE</td>
+                      <td style={{ textAlign: "right", fontWeight: "bold" }}>S/ {(total - document.montoAdelanto!).toFixed(2)}</td>
+                    </tr>
+                  </>
+                ) : (
+                  <>
+                    <tr>
+                      <td>TOTAL A PAGAR</td>
+                      <td style={{ textAlign: "right", fontWeight: "bold" }}>S/ {total.toFixed(2)}</td>
+                    </tr>
+                    {montoRecibido != null && (
+                      <tr>
+                        <td>PAGADO</td>
+                        <td style={{ textAlign: "right" }}>S/ {montoRecibido.toFixed(2)}</td>
+                      </tr>
+                    )}
+                    {paymentMethod === "EFECTIVO" && document.cambio != null && document.cambio >= 0 && (
+                      <tr>
+                        <td>VUELTO</td>
+                        <td style={{ textAlign: "right" }}>S/ {document.cambio.toFixed(2)}</td>
+                      </tr>
+                    )}
+                  </>
                 )}
               </tbody>
             </table>

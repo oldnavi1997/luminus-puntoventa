@@ -268,6 +268,8 @@ model SaleDocument {
   montoEfectivo        Decimal?       @db.Decimal(10, 2)
   montoTarjeta         Decimal?       @db.Decimal(10, 2)
   montoYape            Decimal?       @db.Decimal(10, 2)
+  location             String         @default("TIENDA")
+  notes                String?
   saldoCobradoPorId    String?
   saldoCobradoPor      User?          @relation("DocumentSaldoCobrador", fields: [saldoCobradoPorId], references: [id])
   buyerPhone     String?
@@ -329,6 +331,7 @@ model CajaRetiro {
   id           String   @id @default(cuid())
   montoRetirado Decimal @db.Decimal(10, 2)
   fondoQueQueda Decimal @db.Decimal(10, 2)
+  location     String   @default("TIENDA")
   registradoBy  String
   registradoPor User    @relation(fields: [registradoBy], references: [id])
   createdAt    DateTime @default(now())

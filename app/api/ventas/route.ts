@@ -45,6 +45,8 @@ export async function GET(req: NextRequest) {
     buyerName: d.buyerName,
     buyerPhone: d.buyerPhone ?? null,
     montoAdelanto: d.montoAdelanto ? Number(d.montoAdelanto) : null,
+    location: d.location,
+    notes: d.notes ?? null,
     prescription: d.prescription ?? null,
     createdAt: d.createdAt.toISOString(),
     cashier: { name: d.cashier.name },
@@ -240,6 +242,7 @@ export async function POST(req: NextRequest) {
           montoEfectivo: data.paymentMethod === "MIXTO" ? (data.paymentSplit?.efectivo || null) : null,
           montoTarjeta:  data.paymentMethod === "MIXTO" ? (data.paymentSplit?.tarjeta  || null) : null,
           montoYape:     data.paymentMethod === "MIXTO" ? (data.paymentSplit?.yape     || null) : null,
+          location: stockSource,
           status: esAdelanto ? DocumentStatus.PARTIAL : (isNotaVenta ? DocumentStatus.ACCEPTED : DocumentStatus.DRAFT),
           items: {
             create: itemsData.map(({ item, product, unitPrice, lensPrice, lineTotal, description }) => {

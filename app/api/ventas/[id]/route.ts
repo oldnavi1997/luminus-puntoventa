@@ -8,6 +8,7 @@ import { z } from "zod";
 const PatchSchema = z.object({
   buyerName: z.string().min(1).optional(),
   buyerPhone: z.string().optional(),
+  notes: z.string().optional(),
   prescription: z.object({
     od: z.object({ sphere: z.string(), cylinder: z.string(), axis: z.string() }),
     oi: z.object({ sphere: z.string(), cylinder: z.string(), axis: z.string() }),
@@ -38,6 +39,7 @@ export async function PATCH(
     data: {
       ...(parsed.data.buyerName !== undefined && { buyerName: parsed.data.buyerName }),
       ...(parsed.data.buyerPhone !== undefined && { buyerPhone: parsed.data.buyerPhone }),
+      ...(parsed.data.notes !== undefined && { notes: parsed.data.notes || null }),
       ...(parsed.data.prescription !== undefined && {
         prescription: parsed.data.prescription === null ? Prisma.JsonNull : parsed.data.prescription,
       }),
@@ -47,6 +49,7 @@ export async function PATCH(
   return NextResponse.json({
     buyerName:    updated.buyerName,
     buyerPhone:   updated.buyerPhone,
+    notes:        updated.notes,
     prescription: updated.prescription,
   });
 }

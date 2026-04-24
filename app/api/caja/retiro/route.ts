@@ -6,6 +6,7 @@ import { z } from "zod";
 
 const Schema = z.object({
   montoQueQueda: z.number().min(0),
+  location: z.enum(["TIENDA", "ALMACEN"]),
 });
 
 export async function POST(req: NextRequest) {
@@ -19,67 +20,95 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   }
 
+  const { montoQueQueda, location } = parsed.data;
+  const configId = location === "TIENDA" ? "tienda" : "almacen";
   const now = new Date();
 
-  // Calcular monto retirado: efectivo disponible - fondo que queda
-  const config = await prisma.cajaConfig.findUnique({ where: { id: "main" } });
+  const config = await prisma.cajaConfig.findUnique({ where: { id: configId } });
   const retiroAt = config?.lastRetiroAt ?? null;
   const fondoAnterior = Number(config?.lastRetiroFondo ?? 0);
 
-  const ventasEfectivo = await prisma.saleDocument.aggregate({
-    where: {
-      paymentMethod: "EFECTIVO",
-      status: { notIn: ["VOIDED", "VOID_PENDING"] },
-      ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
-    },
-    _sum: { total: true },
-  });
+  // Calcular efectivo: ventas completas + adelantos PARTIAL + porción efectivo de MIXTO
+  const [ventasCompletas, ventasPartial, ventasMixto] = await Promise.all([
+    prisma.saleDocument.aggregate({
+      where: {
+        location,
+        paymentMethod: "EFECTIVO",
+        status: { notIn: ["VOIDED", "VOID_PENDING", "PARTIAL"] },
+        ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
+      },
+      _sum: { total: true },
+    }),
+    prisma.saleDocument.aggregate({
+      where: {
+        location,
+        paymentMethod: "EFECTIVO",
+        status: "PARTIAL",
+        ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
+      },
+      _sum: { montoAdelanto: true },
+    }),
+    prisma.saleDocument.aggregate({
+      where: {
+        location,
+        paymentMethod: "MIXTO",
+        status: { notIn: ["VOIDED", "VOID_PENDING"] },
+        ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
+      },
+      _sum: { montoEfectivo: true },
+    }),
+  ]);
 
-  const efectivoDisponible = fondoAnterior + Number(ventasEfectivo._sum.total ?? 0);
-  const montoRetirado = Math.max(0, efectivoDisponible - parsed.data.montoQueQueda);
+  const efectivoVentas = Number(ventasCompletas._sum.total ?? 0)
+                       + Number(ventasPartial._sum.montoAdelanto ?? 0)
+                       + Number(ventasMixto._sum.montoEfectivo ?? 0);
+  const efectivoDisponible = fondoAnterior + efectivoVentas;
+  const montoRetirado = Math.max(0, efectivoDisponible - montoQueQueda);
 
   await prisma.$transaction(async (tx) => {
     await tx.cajaConfig.upsert({
-      where: { id: "main" },
+      where: { id: configId },
       create: {
-        id: "main",
-        nextOpeningOverride: parsed.data.montoQueQueda,
+        id: configId,
+        nextOpeningOverride: location === "TIENDA" ? montoQueQueda : null,
         lastRetiroAt: now,
-        lastRetiroFondo: parsed.data.montoQueQueda,
+        lastRetiroFondo: montoQueQueda,
       },
       update: {
-        nextOpeningOverride: parsed.data.montoQueQueda,
+        ...(location === "TIENDA" && { nextOpeningOverride: montoQueQueda }),
         lastRetiroAt: now,
-        lastRetiroFondo: parsed.data.montoQueQueda,
+        lastRetiroFondo: montoQueQueda,
       },
     });
 
     await tx.cajaRetiro.create({
       data: {
         montoRetirado,
-        fondoQueQueda: parsed.data.montoQueQueda,
+        fondoQueQueda: montoQueQueda,
+        location,
         registradoBy: session.user.id,
       },
     });
 
-    // Cerrar todas las sesiones activas para que los cajeros reabran con el nuevo fondo
-    const openSessions = await tx.posSession.findMany({
-      where: { status: "OPEN" },
-      select: { id: true, openingBalance: true, totalEfectivo: true },
-    });
-    for (const s of openSessions) {
-      await tx.posSession.update({
-        where: { id: s.id },
-        data: {
-          status: "CLOSED",
-          closedAt: now,
-          closingBalance: Number(s.openingBalance) + Number(s.totalEfectivo),
-          notes: "Cerrada por retiro de caja",
-        },
+    // Solo el retiro TIENDA cierra sesiones de cajeros (no la del admin)
+    if (location === "TIENDA") {
+      const openSessions = await tx.posSession.findMany({
+        where: { status: "OPEN", user: { role: { not: "ADMIN" } } },
+        select: { id: true, openingBalance: true, totalEfectivo: true },
       });
+      for (const s of openSessions) {
+        await tx.posSession.update({
+          where: { id: s.id },
+          data: {
+            status: "CLOSED",
+            closedAt: now,
+            closingBalance: Number(s.openingBalance) + Number(s.totalEfectivo),
+            notes: "Cerrada por retiro de caja (Tienda)",
+          },
+        });
+      }
     }
   });
 
-  return NextResponse.json({ ok: true, montoQueQueda: parsed.data.montoQueQueda });
-
+  return NextResponse.json({ ok: true, montoQueQueda, location });
 }

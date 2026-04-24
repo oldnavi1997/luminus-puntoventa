@@ -544,7 +544,7 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
 
       {showReceipt && saleResult && (
         <Receipt
-          document={saleResult}
+          document={{ ...saleResult, montoAdelanto: saleResult.montoAdelanto ?? null }}
           items={saleItems.map((i) => ({
             description: i.name,
             quantity: i.quantity,

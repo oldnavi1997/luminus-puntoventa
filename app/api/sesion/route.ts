@@ -46,9 +46,9 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Limpiar override de retiro al abrir nueva sesión
+  // Limpiar override de retiro de tienda al abrir nueva sesión
   await prisma.cajaConfig.updateMany({
-    where: { id: "main", nextOpeningOverride: { not: null } },
+    where: { id: "tienda", nextOpeningOverride: { not: null } },
     data: { nextOpeningOverride: null },
   });
 
