@@ -55,11 +55,28 @@ export async function DELETE(
 
   const { id } = await params;
 
-  // No permitir que el admin se elimine a sí mismo
   if (id === session.user.id) {
     return NextResponse.json({ error: "No puedes eliminar tu propia cuenta" }, { status: 400 });
   }
 
-  await prisma.user.delete({ where: { id } });
-  return NextResponse.json({ ok: true });
+  try {
+    // Verificar si el usuario tiene actividad registrada antes de eliminar
+    const [sessions, docs, retiros] = await Promise.all([
+      prisma.posSession.count({ where: { userId: id } }),
+      prisma.saleDocument.count({ where: { cashierId: id } }),
+      prisma.cajaRetiro.count({ where: { registradoBy: id } }),
+    ]);
+
+    if (sessions > 0 || docs > 0 || retiros > 0) {
+      return NextResponse.json(
+        { error: "No se puede eliminar: el usuario tiene sesiones o documentos registrados" },
+        { status: 409 }
+      );
+    }
+
+    await prisma.user.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ error: "Error al eliminar el usuario" }, { status: 500 });
+  }
 }
