@@ -164,6 +164,7 @@ export function VentasView() {
                   )}
                   <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Pago</th>
                   <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Estado</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Medida</th>
                   <th className="text-right px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Total</th>
                   <th className="px-4 py-2.5 border-b border-border" />
                 </tr>
@@ -220,6 +221,13 @@ export function VentasView() {
                             {STATUS_LABEL[doc.status] ?? doc.status}
                           </span>
                         </td>
+                        <td className="px-4 py-3 border-b border-border">
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                            doc.prescription ? "bg-accent/10 text-accent" : "bg-surface-dark text-ink-4"
+                          }`}>
+                            {doc.prescription ? "SI" : "NO"}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 border-b border-border text-right">
                           <span className="text-[13px] font-semibold font-mono text-ink">{formatPEN(doc.total)}</span>
                         </td>
@@ -247,7 +255,7 @@ export function VentasView() {
 
                       {open && (
                         <tr key={`${doc.id}-items`} className="bg-surface-light">
-                          <td colSpan={hasAdelantos ? 9 : 8} className="px-6 py-3 border-b border-border">
+                          <td colSpan={hasAdelantos ? 10 : 9} className="px-6 py-3 border-b border-border">
                             <table className="w-full">
                               <thead>
                                 <tr>
