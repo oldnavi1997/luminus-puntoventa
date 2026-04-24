@@ -11,7 +11,7 @@ export default async function PosPage() {
   if (!session) redirect("/login");
 
   const posSession = await prisma.posSession.findUnique({
-    where: { id: session.user.posSessionId },
+    where: { id: session.user.posSessionId ?? undefined },
     select: { openedAt: true },
   });
 
