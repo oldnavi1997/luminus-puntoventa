@@ -28,7 +28,7 @@ interface Stats {
   notasHoy: number;
 }
 
-type TypeFilter   = "all" | "BOLETA" | "FACTURA" | "NOTA_VENTA";
+type TypeFilter   = "all" | "BOLETA" | "FACTURA";
 type StatusFilter = "all" | "ACCEPTED" | "PENDING" | "REJECTED";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -106,13 +106,13 @@ export function ComprobantesView() {
           <div className="flex items-center gap-3 px-4 py-3 border-b border-border flex-wrap">
             {/* Type filter */}
             <div className="flex bg-surface-light rounded-lg p-0.5 gap-0.5 border border-border">
-              {(["all", "BOLETA", "FACTURA", "NOTA_VENTA"] as TypeFilter[]).map((t) => (
+              {(["all", "BOLETA", "FACTURA"] as TypeFilter[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setType(t)}
                   className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${type === t ? "bg-surface shadow-sm text-ink" : "text-ink-3"}`}
                 >
-                  {t === "all" ? "Todos" : t === "BOLETA" ? "Boletas" : t === "FACTURA" ? "Facturas" : "Notas de Venta"}
+                  {t === "all" ? "Todos" : t === "BOLETA" ? "Boletas" : "Facturas"}
                 </button>
               ))}
             </div>

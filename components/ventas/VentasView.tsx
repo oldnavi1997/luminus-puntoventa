@@ -74,7 +74,6 @@ export function VentasView() {
   const [loading, setLoading] = useState(true);
   const [date, setDate]       = useState(() => new Date().toISOString().slice(0, 10));
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [convertDoc, setConvertDoc] = useState<Sale | null>(null);
   const [deleteDoc, setDeleteDoc]   = useState<Sale | null>(null);
   const [editingDoc, setEditingDoc] = useState<Sale | null>(null);
 
@@ -233,14 +232,6 @@ export function VentasView() {
                             >
                               <Pencil size={13} />
                             </button>
-                            {doc.type === "NOTA_VENTA" && doc.status === "ACCEPTED" && (
-                              <button
-                                onClick={() => setConvertDoc(doc)}
-                                className="text-[11px] px-2 py-1 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 transition-colors whitespace-nowrap"
-                              >
-                                Convertir
-                              </button>
-                            )}
                             {isAdmin && (
                               <button
                                 onClick={() => setDeleteDoc(doc)}
@@ -335,17 +326,6 @@ export function VentasView() {
           onUpdate={(data) => {
             updateDoc(editingDoc.id, data);
             setEditingDoc(null);
-          }}
-        />
-      )}
-
-      {convertDoc && (
-        <ConvertModal
-          doc={convertDoc}
-          onClose={() => setConvertDoc(null)}
-          onSuccess={() => {
-            setConvertDoc(null);
-            fetchDocs(date);
           }}
         />
       )}
@@ -681,133 +661,3 @@ function DeleteModal({ doc, onClose, onSuccess }: { doc: Sale; onClose: () => vo
   );
 }
 
-// ─── ConvertModal ─────────────────────────────────────────────────────────────
-
-function ConvertModal({ doc, onClose, onSuccess }: { doc: Sale; onClose: () => void; onSuccess: () => void }) {
-  const [docType, setDocType] = useState<"BOLETA" | "FACTURA">("BOLETA");
-  const [buyerName, setBuyerName] = useState(doc.buyerName ?? "");
-  const [buyerDocType, setBuyerDocType] = useState("DNI");
-  const [buyerDocNumber, setBuyerDocNumber] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<{ fullNumber: string; status: string } | null>(null);
-
-  async function handleConvert() {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/ventas/${doc.id}/convertir`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          docType,
-          buyer: { docType: buyerDocType, docNumber: buyerDocNumber, name: buyerName },
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Error");
-      setResult({ fullNumber: json.fullNumber, status: json.status });
-      onSuccess();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Error al convertir");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const canConvert = buyerName.trim().length > 0
-    && buyerDocNumber.trim().length > 0
-    && (docType === "BOLETA" || buyerDocNumber.length === 11);
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-sm border border-border">
-        <div className="flex items-center px-5 py-4 border-b border-border">
-          <h2 className="font-semibold text-ink text-[15px]">Convertir {doc.fullNumber}</h2>
-          <button onClick={onClose} className="ml-auto text-ink-3 hover:text-ink transition-colors">
-            <X size={18} />
-          </button>
-        </div>
-        <div className="p-5 space-y-4">
-          {result ? (
-            <div className="text-center space-y-3 py-2">
-              <p className="text-[16px] font-bold font-mono text-ink">{result.fullNumber}</p>
-              <p className="text-[13px] text-ink-3">
-                {result.status === "ACCEPTED" ? "Aceptado por SUNAT" : "Pendiente de envío"}
-              </p>
-              <button
-                onClick={onClose}
-                className="w-full bg-ink text-white rounded-xl py-2.5 text-[13px] font-medium"
-              >
-                Cerrar
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-1 bg-surface-light p-0.5 rounded-lg">
-                {(["BOLETA", "FACTURA"] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setDocType(t)}
-                    className={`py-2 rounded-md text-[12.5px] font-medium transition-all ${
-                      docType === t ? "bg-surface text-ink shadow-sm" : "text-ink-3"
-                    }`}
-                  >
-                    {t === "BOLETA" ? "Boleta" : "Factura"}
-                  </button>
-                ))}
-              </div>
-
-              <div className="space-y-2">
-                <input
-                  value={buyerName}
-                  onChange={(e) => setBuyerName(e.target.value)}
-                  placeholder="Nombre / Razón social"
-                  className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
-                />
-                <div className="flex gap-2">
-                  <select
-                    value={buyerDocType}
-                    onChange={(e) => setBuyerDocType(e.target.value)}
-                    className="bg-surface-light border border-border rounded-lg px-2 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
-                  >
-                    <option value="DNI">DNI</option>
-                    <option value="RUC">RUC</option>
-                    <option value="CE">CE</option>
-                  </select>
-                  <input
-                    value={buyerDocNumber}
-                    onChange={(e) => setBuyerDocNumber(e.target.value)}
-                    placeholder={docType === "FACTURA" ? "RUC (11 dígitos)" : "Número"}
-                    className="flex-1 bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
-                  />
-                </div>
-                {docType === "FACTURA" && buyerDocNumber.length > 0 && buyerDocNumber.length !== 11 && (
-                  <p className="text-[11px] text-warning">El RUC debe tener 11 dígitos</p>
-                )}
-              </div>
-
-              {error && <p className="text-[12px] text-danger">{error}</p>}
-
-              <div className="flex gap-2 pt-1">
-                <button
-                  onClick={onClose}
-                  className="flex-1 bg-surface-light border border-border rounded-xl py-2.5 text-[13px] text-ink transition-colors hover:bg-border"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleConvert}
-                  disabled={!canConvert || loading}
-                  className="flex-1 bg-accent hover:bg-accent-dark disabled:opacity-40 text-white rounded-xl py-2.5 text-[13px] font-semibold transition-colors"
-                >
-                  {loading ? "Procesando..." : "Convertir"}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
