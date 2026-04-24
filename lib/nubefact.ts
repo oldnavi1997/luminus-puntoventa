@@ -1,5 +1,3 @@
-import type { NubefactBoletaPayload } from "./sunat";
-
 const BASE_URL = process.env.NUBEFACT_BASE_URL
   ?? `https://demo.api.nubefact.com/api/v1/${process.env.NUBEFACT_RUC}`;
 
@@ -36,7 +34,7 @@ async function post(body: unknown): Promise<NubefactResponse> {
 }
 
 export async function emitirDocumento(
-  payload: NubefactBoletaPayload
+  payload: Record<string, unknown>
 ): Promise<NubefactResponse> {
   return post(payload);
 }
