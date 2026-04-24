@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Timer, RefreshCw, User, CalendarDays } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { Timer, RefreshCw, User, CalendarDays, Plus, X } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { CobrarSaldoModal } from "./CobrarSaldoModal";
 import { formatPEN } from "@/lib/utils";
@@ -24,10 +25,20 @@ interface PendientesViewProps {
   posSessionId: string;
 }
 
+const METHOD_LABEL: Record<string, string> = {
+  EFECTIVO: "Efectivo",
+  TARJETA:  "Tarjeta",
+  YAPE:     "Yape",
+};
+
 export function PendientesView({ posSessionId }: PendientesViewProps) {
+  const { data: session } = useSession();
+  const isAdmin = session?.user.role === "ADMIN";
+
   const [docs, setDocs] = useState<PendienteDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [cobrando, setCobrando] = useState<PendienteDoc | null>(null);
+  const [creando, setCreando] = useState(false);
 
   const fetchDocs = useCallback(async () => {
     setLoading(true);
@@ -46,7 +57,18 @@ export function PendientesView({ posSessionId }: PendientesViewProps) {
 
   return (
     <>
-      <ModuleHeader title="Pendientes de Recojo" subtitle="Ventas con adelanto · saldo por cobrar" />
+      <ModuleHeader
+        title="Pendientes de Recojo"
+        subtitle="Ventas con adelanto · saldo por cobrar"
+        right={isAdmin ? (
+          <button
+            onClick={() => setCreando(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-accent hover:bg-accent/90 text-white text-[12.5px] font-semibold rounded-lg transition-colors"
+          >
+            <Plus size={14} /> Nuevo pendiente
+          </button>
+        ) : undefined}
+      />
 
       <div className="flex-1 p-5 space-y-4">
         {/* Stats */}
@@ -163,6 +185,181 @@ export function PendientesView({ posSessionId }: PendientesViewProps) {
           onClose={() => setCobrando(null)}
         />
       )}
+
+      {creando && (
+        <NuevoPendienteModal
+          onClose={() => setCreando(false)}
+          onSuccess={() => { setCreando(false); fetchDocs(); }}
+        />
+      )}
     </>
+  );
+}
+
+// ─── Modal: crear pendiente manual ───────────────────────────────────────────
+
+function NuevoPendienteModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [buyerName,     setBuyerName]     = useState("");
+  const [buyerPhone,    setBuyerPhone]    = useState("");
+  const [total,         setTotal]         = useState("");
+  const [adelanto,      setAdelanto]      = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"EFECTIVO" | "TARJETA" | "YAPE">("EFECTIVO");
+  const [loading,       setLoading]       = useState(false);
+  const [error,         setError]         = useState("");
+
+  const saldo = (parseFloat(total) || 0) - (parseFloat(adelanto) || 0);
+
+  async function handleSubmit() {
+    setError("");
+    const totalNum   = parseFloat(total);
+    const adelantoNum = parseFloat(adelanto);
+
+    if (!buyerName.trim()) { setError("El nombre del cliente es requerido"); return; }
+    if (!totalNum || totalNum <= 0) { setError("El total debe ser mayor a 0"); return; }
+    if (!adelantoNum || adelantoNum <= 0) { setError("El adelanto debe ser mayor a 0"); return; }
+    if (adelantoNum >= totalNum) { setError("El adelanto debe ser menor al total"); return; }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/ventas/pendientes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          buyerName: buyerName.trim(),
+          buyerPhone: buyerPhone.trim() || undefined,
+          total: totalNum,
+          montoAdelanto: adelantoNum,
+          paymentMethod,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Error al crear");
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al crear el pendiente");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-surface border border-border rounded-2xl shadow-xl w-full max-w-md">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="text-[15px] font-semibold text-ink">Nuevo pendiente manual</h2>
+          <button onClick={onClose} className="text-ink-4 hover:text-ink transition-colors p-1">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 space-y-4">
+          {error && (
+            <div className="bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 text-[12.5px] text-danger">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-[11.5px] font-medium text-ink-3 mb-1.5">Nombre del cliente *</label>
+            <input
+              type="text"
+              value={buyerName}
+              onChange={(e) => setBuyerName(e.target.value)}
+              placeholder="Ej: Juan Pérez"
+              className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none focus:border-accent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11.5px] font-medium text-ink-3 mb-1.5">Teléfono (opcional)</label>
+            <input
+              type="text"
+              value={buyerPhone}
+              onChange={(e) => setBuyerPhone(e.target.value)}
+              placeholder="Ej: 987 654 321"
+              className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none focus:border-accent"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11.5px] font-medium text-ink-3 mb-1.5">Total (S/.)</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={total}
+                onChange={(e) => setTotal(e.target.value)}
+                placeholder="0.00"
+                className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink font-mono placeholder:text-ink-4 focus:outline-none focus:border-accent"
+              />
+            </div>
+            <div>
+              <label className="block text-[11.5px] font-medium text-ink-3 mb-1.5">Adelanto (S/.)</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={adelanto}
+                onChange={(e) => setAdelanto(e.target.value)}
+                placeholder="0.00"
+                className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink font-mono placeholder:text-ink-4 focus:outline-none focus:border-accent"
+              />
+            </div>
+          </div>
+
+          {saldo > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex justify-between text-[12.5px]">
+              <span className="text-amber-700">Saldo pendiente</span>
+              <span className="font-bold font-mono text-amber-700">{formatPEN(saldo)}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-[11.5px] font-medium text-ink-3 mb-1.5">Método de pago del adelanto</label>
+            <div className="flex gap-2">
+              {(["EFECTIVO", "TARJETA", "YAPE"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setPaymentMethod(m)}
+                  className={`flex-1 py-2 rounded-lg text-[12px] font-semibold border transition-colors ${
+                    paymentMethod === m
+                      ? "bg-accent text-white border-accent"
+                      : "bg-surface-light text-ink-3 border-border hover:bg-border"
+                  }`}
+                >
+                  {METHOD_LABEL[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-2 px-5 py-4 border-t border-border">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-border text-ink-2 text-[13px] font-medium hover:bg-surface-light transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex-1 py-2.5 rounded-xl bg-accent hover:bg-accent/90 disabled:opacity-40 text-white text-[13px] font-semibold transition-colors"
+          >
+            {loading ? "Creando..." : "Crear pendiente"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
