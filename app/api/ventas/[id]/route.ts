@@ -64,10 +64,31 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const doc = await prisma.saleDocument.findUnique({ where: { id } });
+  const doc = await prisma.saleDocument.findUnique({
+    where: { id },
+    include: {
+      items: { select: { productId: true, quantity: true, product: { select: { trackInventory: true } } } },
+    },
+  });
   if (!doc) return NextResponse.json({ error: "Venta no encontrada" }, { status: 404 });
 
   await prisma.$transaction(async (tx) => {
+    // Restaurar stock
+    for (const item of doc.items) {
+      if (!item.product.trackInventory) continue;
+      if (doc.location === "ALMACEN") {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stockAlmacen: { increment: item.quantity }, stock: { increment: item.quantity } },
+        });
+      } else {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stockTienda: { increment: item.quantity }, stock: { increment: item.quantity } },
+        });
+      }
+    }
+
     // Revertir totales de la sesión si el documento está vinculado a una
     if (doc.posSessionId) {
       // Para ventas con adelanto (PARTIAL): solo se registró el adelanto en sesión

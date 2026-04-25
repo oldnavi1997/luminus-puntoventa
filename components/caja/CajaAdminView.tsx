@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Wallet, ArrowDownCircle, XCircle, AlertTriangle, CheckCircle, DollarSign, History, ArrowUpCircle, Store, Warehouse } from "lucide-react";
+import { Wallet, ArrowDownCircle, XCircle, AlertTriangle, CheckCircle, DollarSign, History, ArrowUpCircle, Store, Warehouse, Banknote } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
 
@@ -54,18 +54,44 @@ function EfectivoPanel({
   label,
   icon: Icon,
   data,
+  location,
   onRetiro,
+  onAjusteFondo,
 }: {
   label: string;
   icon: React.ElementType;
   data: LocationData;
+  location: "TIENDA" | "ALMACEN";
   onRetiro: (monto: number) => Promise<void>;
+  onAjusteFondo: (location: "TIENDA" | "ALMACEN", monto: number) => Promise<void>;
 }) {
   const [retiro, setRetiro] = useState("");
   const [loading, setLoading] = useState(false);
   const [ok, setOk] = useState(false);
   const [error, setError] = useState("");
   const [nextOverride, setNextOverride] = useState(data.nextOverride ?? null);
+  const [showFondo, setShowFondo] = useState(false);
+  const [fondoInput, setFondoInput] = useState("");
+  const [loadingFondo, setLoadingFondo] = useState(false);
+  const [fondoOk, setFondoOk] = useState(false);
+  const [fondoError, setFondoError] = useState("");
+
+  async function handleAjusteFondo() {
+    const monto = parseFloat(fondoInput);
+    if (isNaN(monto) || monto < 0) return;
+    setLoadingFondo(true);
+    setFondoOk(false);
+    setFondoError("");
+    try {
+      await onAjusteFondo(location, monto);
+      setFondoOk(true);
+      setFondoInput("");
+    } catch (e) {
+      setFondoError(e instanceof Error ? e.message : "Error");
+    } finally {
+      setLoadingFondo(false);
+    }
+  }
 
   const efectivoDisponible = data.fondoActual + data.efectivoVentas;
   const fondoSiguiente = parseFloat(retiro) || 0;
@@ -192,6 +218,59 @@ function EfectivoPanel({
           ))}
         </div>
       )}
+
+      {/* Ajuste de fondo */}
+      <div className="border-t border-border pt-3 space-y-2">
+        <button
+          onClick={() => { setShowFondo(!showFondo); setFondoOk(false); setFondoError(""); }}
+          className="text-[11px] uppercase tracking-wide text-text-muted font-medium flex items-center gap-1.5 hover:text-text transition-colors w-full"
+        >
+          <Banknote size={12} />
+          Ajuste de fondo
+          <span className="ml-auto text-[10px]">{showFondo ? "▲" : "▼"}</span>
+        </button>
+
+        {showFondo && (
+          <div className="space-y-2">
+            <p className="text-[11px] text-text-muted">
+              Declara el efectivo físico actual en caja. No genera retiro ni cierra sesiones.
+            </p>
+            {fondoOk && (
+              <div className="bg-success/10 border border-success/30 rounded-lg px-3 py-2 text-[11.5px] text-success flex items-center gap-2">
+                <CheckCircle size={12} /> Fondo actualizado
+              </div>
+            )}
+            {fondoError && (
+              <div className="bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 text-[11.5px] text-danger">
+                {fondoError}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <DollarSign size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
+                <input
+                  type="number"
+                  value={fondoInput}
+                  onChange={(e) => { setFondoInput(e.target.value); setFondoOk(false); }}
+                  min="0"
+                  step="0.10"
+                  placeholder="Monto en caja"
+                  className="w-full bg-primary border border-border rounded-lg pl-7 pr-3 py-2 text-[13px] font-bold text-text focus:outline-none focus:border-accent"
+                />
+              </div>
+              <button
+                onClick={handleAjusteFondo}
+                disabled={loadingFondo || fondoInput === ""}
+                className="bg-accent/10 hover:bg-accent/20 disabled:opacity-40 border border-accent/30 text-accent font-semibold rounded-lg px-3 py-2 text-[12px] transition-colors flex items-center gap-1.5 whitespace-nowrap"
+              >
+                {loadingFondo
+                  ? <div className="w-3.5 h-3.5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+                  : <><Banknote size={13} /> Guardar</>}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -243,6 +322,17 @@ export function CajaAdminView({ sesiones: initial, sesionesCerradas: initialCerr
     router.refresh();
   }
 
+  async function handleAjusteFondo(location: "TIENDA" | "ALMACEN", monto: number) {
+    const res = await fetch("/api/caja/fondo", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ location, monto }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? "Error al ajustar fondo");
+    router.refresh();
+  }
+
   // Cerrar sesión state
   const [confirming, setConfirming] = useState<string | null>(null);
   const [loadingCierre, setLoadingCierre] = useState<string | null>(null);
@@ -279,13 +369,17 @@ export function CajaAdminView({ sesiones: initial, sesionesCerradas: initialCerr
             label="Tienda Física"
             icon={Store}
             data={tienda}
+            location="TIENDA"
             onRetiro={(m) => handleRetiro("TIENDA", m)}
+            onAjusteFondo={handleAjusteFondo}
           />
           <EfectivoPanel
             label="Almacén"
             icon={Warehouse}
             data={almacen}
+            location="ALMACEN"
             onRetiro={(m) => handleRetiro("ALMACEN", m)}
+            onAjusteFondo={handleAjusteFondo}
           />
         </div>
 

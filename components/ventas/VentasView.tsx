@@ -78,7 +78,7 @@ export function VentasView() {
   const [docs, setDocs]       = useState<Sale[]>([]);
   const [stats, setStats]     = useState<Stats>({ totalVentas: 0, countVentas: 0, ticketPromedio: 0 });
   const [loading, setLoading] = useState(true);
-  const [date, setDate]       = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate]       = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }));
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [locationFilter, setLocationFilter] = useState<"ALL" | "TIENDA" | "ALMACEN">("ALL");
   const [deleteDoc, setDeleteDoc]   = useState<Sale | null>(null);
@@ -107,7 +107,7 @@ export function VentasView() {
     setDocs((prev) => prev.map((d) => d.id === id ? { ...d, ...data } : d));
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const filteredDocs = locationFilter === "ALL" ? docs : docs.filter((d) => d.location === locationFilter);
   const hasAdelantos = filteredDocs.some((d) => d.montoAdelanto != null);
   const hasMultipleLocations = docs.some((d) => d.location === "ALMACEN");

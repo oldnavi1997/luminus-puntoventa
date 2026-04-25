@@ -23,7 +23,7 @@ export default async function SesionPage() {
   // Saldo sugerido para apertura: override de retiro admin, o efectivo esperado de última sesión
   let suggestedBalance = 0;
   if (!activeSession) {
-    const config = await prisma.cajaConfig.findUnique({ where: { id: "main" } });
+    const config = await prisma.cajaConfig.findUnique({ where: { id: "tienda" } });
     if (config?.nextOpeningOverride != null) {
       suggestedBalance = Number(config.nextOpeningOverride);
     } else {
