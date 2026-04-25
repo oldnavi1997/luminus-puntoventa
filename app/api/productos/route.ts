@@ -3,6 +3,54 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (session.user.role !== "ADMIN") return NextResponse.json({ error: "Prohibido" }, { status: 403 });
+
+  const body = await req.json();
+  const { name, sku, brand, price, storePrice, stockTienda, stockAlmacen, trackInventory, categoryId } = body;
+
+  if (!name?.trim()) return NextResponse.json({ error: "Nombre requerido" }, { status: 400 });
+
+  const base   = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const suffix = Math.random().toString(36).slice(2, 7);
+  const slug   = `${base}-${suffix}`;
+
+  const tienda  = Number(stockTienda)  || 0;
+  const almacen = Number(stockAlmacen) || 0;
+  const track   = trackInventory !== false;
+
+  const product = await prisma.product.create({
+    data: {
+      name:           name.trim(),
+      slug,
+      sku:            sku?.trim()   || null,
+      brand:          brand?.trim() || null,
+      price:          price ? Number(price) : 0,
+      storePrice:     storePrice ? Number(storePrice) : null,
+      stockTienda:    tienda,
+      stockAlmacen:   almacen,
+      stock:          track ? tienda + almacen : 0,
+      trackInventory: track,
+      active:         true,
+      ...(categoryId && {
+        categories:       { connect: { id: categoryId } },
+        primaryCategoryId: categoryId,
+      }),
+    },
+    include: { categories: { select: { id: true, name: true } } },
+  });
+
+  return NextResponse.json({
+    product: {
+      ...product,
+      price:      Number(product.price),
+      storePrice: product.storePrice != null ? Number(product.storePrice) : null,
+    },
+  }, { status: 201 });
+}
+
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });

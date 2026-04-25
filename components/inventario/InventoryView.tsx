@@ -299,6 +299,217 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
   );
 }
 
+// ─── New Product Modal ────────────────────────────────────────────────────────
+
+interface NewModalProps {
+  onClose: () => void;
+  onCreated: (p: Product) => void;
+}
+
+function NewProductModal({ onClose, onCreated }: NewModalProps) {
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [form, setForm] = useState({
+    name:           "",
+    sku:            "",
+    brand:          "",
+    price:          "",
+    storePrice:     "",
+    categoryId:     "",
+    stockTienda:    "0",
+    stockAlmacen:   "0",
+    trackInventory: true,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/productos/categorias")
+      .then((r) => r.json())
+      .then((d) => setCategories(d.categories ?? []))
+      .catch(() => {});
+  }, []);
+
+  const set = (k: string, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }));
+
+  async function handleSave() {
+    if (!form.name.trim()) { setError("El nombre es requerido"); return; }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/productos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name:           form.name.trim(),
+          sku:            form.sku.trim(),
+          brand:          form.brand.trim(),
+          price:          form.price,
+          storePrice:     form.storePrice,
+          categoryId:     form.categoryId || undefined,
+          stockTienda:    form.trackInventory ? Number(form.stockTienda) : 0,
+          stockAlmacen:   form.trackInventory ? Number(form.stockAlmacen) : 0,
+          trackInventory: form.trackInventory,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Error al crear");
+      onCreated(json.product);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo crear el producto.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm animate-fade-in">
+      <div className="bg-surface border border-border rounded-2xl shadow-xl w-full max-w-md animate-scale-in max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <h2 className="text-[15px] font-semibold text-ink">Nuevo producto</h2>
+          <button onClick={onClose} className="text-ink-3 hover:text-ink transition-colors"><X size={18} /></button>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 space-y-3.5 overflow-y-auto">
+          {/* Nombre */}
+          <div>
+            <label className="block text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">Nombre *</label>
+            <input
+              autoFocus
+              className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
+              value={form.name}
+              onChange={(e) => set("name", e.target.value)}
+              placeholder="Ej: Armazón Ray-Ban RB3025"
+            />
+          </div>
+
+          {/* SKU + Marca */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">SKU / Código</label>
+              <input
+                className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink font-mono focus:outline-none focus:border-accent"
+                value={form.sku}
+                onChange={(e) => set("sku", e.target.value)}
+                placeholder="—"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">Marca</label>
+              <input
+                className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
+                value={form.brand}
+                onChange={(e) => set("brand", e.target.value)}
+                placeholder="—"
+              />
+            </div>
+          </div>
+
+          {/* Precio web + Precio tienda */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">Precio web (S/)</label>
+              <input
+                type="number" min="0" step="0.01"
+                className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink font-mono focus:outline-none focus:border-accent"
+                value={form.price}
+                onChange={(e) => set("price", e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">Precio tienda (S/)</label>
+              <input
+                type="number" min="0" step="0.01"
+                className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink font-mono focus:outline-none focus:border-accent"
+                value={form.storePrice}
+                onChange={(e) => set("storePrice", e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+          </div>
+
+          {/* Categoría */}
+          {categories.length > 0 && (
+            <div>
+              <label className="block text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">Categoría</label>
+              <select
+                className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
+                value={form.categoryId}
+                onChange={(e) => set("categoryId", e.target.value)}
+              >
+                <option value="">Sin categoría</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Sin inventario toggle */}
+          <div className="flex items-center justify-between py-2.5 px-3 bg-surface-light border border-border rounded-lg">
+            <div>
+              <p className="text-[13px] font-medium text-ink">Sin control de inventario</p>
+              <p className="text-[11.5px] text-ink-3 mt-0.5">Para servicios y consumibles</p>
+            </div>
+            <button
+              onClick={() => set("trackInventory", !form.trackInventory)}
+              className={`relative w-10 h-5.5 rounded-full transition-colors ${!form.trackInventory ? "bg-accent" : "bg-border"}`}
+            >
+              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${!form.trackInventory ? "translate-x-5" : "translate-x-0.5"}`} />
+            </button>
+          </div>
+
+          {/* Stock */}
+          {form.trackInventory && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">Stock Tienda</label>
+                <input
+                  type="number" min="0"
+                  className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink font-mono focus:outline-none focus:border-accent"
+                  value={form.stockTienda}
+                  onChange={(e) => set("stockTienda", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">Stock Almacén</label>
+                <input
+                  type="number" min="0"
+                  className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink font-mono focus:outline-none focus:border-accent"
+                  value={form.stockAlmacen}
+                  onChange={(e) => set("stockAlmacen", e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          {error && <p className="text-[12px] text-danger">{error}</p>}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-border shrink-0 flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-[13px] text-ink-3 hover:text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !form.name.trim()}
+            className="px-4 py-1.5 text-[13px] font-medium bg-ink text-white rounded-lg hover:bg-ink-2 disabled:opacity-50 transition-colors"
+          >
+            {saving ? "Creando…" : "Crear producto"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main View ────────────────────────────────────────────────────────────────
 
 export function InventoryView() {
@@ -313,7 +524,8 @@ export function InventoryView() {
   const [stats, setStats] = useState<Stats>({
     total: 0, totalUnits: 0, totalValue: 0, lowCount: 0, outCount: 0,
   });
-  const [editing, setEditing] = useState<Product | null>(null);
+  const [editing,    setEditing]    = useState<Product | null>(null);
+  const [showNew,    setShowNew]    = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 300);
@@ -356,6 +568,11 @@ export function InventoryView() {
     fetch("/api/productos/stats").then((r) => r.json()).then((d) => setStats(d)).catch(() => {});
   }
 
+  function handleCreated(p: Product) {
+    setProducts((prev) => [p, ...prev]);
+    fetch("/api/productos/stats").then((r) => r.json()).then((d) => setStats(d)).catch(() => {});
+  }
+
   const stockState = (p: Product) => {
     if (!p.trackInventory) return "service";
     const total = p.stockTienda + p.stockAlmacen;
@@ -374,12 +591,21 @@ export function InventoryView() {
           onDeleted={handleDeleted}
         />
       )}
+      {showNew && (
+        <NewProductModal
+          onClose={() => setShowNew(false)}
+          onCreated={handleCreated}
+        />
+      )}
 
       <ModuleHeader
         title="Inventario"
         subtitle="Control de stock y productos activos"
         right={
-          <button className="flex items-center gap-2 bg-ink text-white rounded-lg px-3 py-1.5 text-[13px] font-medium hover:bg-ink-2 transition-colors">
+          <button
+            onClick={() => setShowNew(true)}
+            className="flex items-center gap-2 bg-ink text-white rounded-lg px-3 py-1.5 text-[13px] font-medium hover:bg-ink-2 transition-colors"
+          >
             <Plus size={14} /> Nuevo producto
           </button>
         }
