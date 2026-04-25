@@ -22,19 +22,40 @@ export async function PATCH(req: NextRequest) {
 
   const { location, monto } = parsed.data;
   const configId = location === "TIENDA" ? "tienda" : "almacen";
+  const now = new Date();
 
-  await prisma.cajaConfig.upsert({
-    where: { id: configId },
-    create: {
-      id: configId,
-      lastRetiroFondo: monto,
-      ...(location === "TIENDA" && { nextOpeningOverride: monto }),
-      updatedAt: new Date(),
-    },
-    update: {
-      lastRetiroFondo: monto,
-      ...(location === "TIENDA" && { nextOpeningOverride: monto }),
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.cajaConfig.upsert({
+      where: { id: configId },
+      create: {
+        id: configId,
+        lastRetiroFondo: monto,
+        ...(location === "TIENDA" && { nextOpeningOverride: monto }),
+        updatedAt: now,
+      },
+      update: {
+        lastRetiroFondo: monto,
+        ...(location === "TIENDA" && { nextOpeningOverride: monto }),
+      },
+    });
+
+    if (location === "TIENDA") {
+      const openSessions = await tx.posSession.findMany({
+        where: { status: "OPEN", user: { role: { not: "ADMIN" } } },
+        select: { id: true, openingBalance: true, totalEfectivo: true },
+      });
+      for (const s of openSessions) {
+        await tx.posSession.update({
+          where: { id: s.id },
+          data: {
+            status: "CLOSED",
+            closedAt: now,
+            closingBalance: Number(s.openingBalance) + Number(s.totalEfectivo),
+            notes: "Cerrada por ajuste de fondo",
+          },
+        });
+      }
+    }
   });
 
   return NextResponse.json({ ok: true, monto, location });
