@@ -347,3 +347,35 @@ model DocumentQueue {
   nextRetryAt DateTime @default(now())
   createdAt   DateTime @default(now())
 }
+
+// ─── Calculador de Lunas ──────────────────────────────────────────────────────
+
+model LensCatalog {
+  id        String   @id @default(uuid()) @db.Uuid
+  nombre    String
+  nota      String?
+  ar16      Decimal? @db.Decimal(10, 2)
+  arsy      Decimal? @db.Decimal(10, 2)
+  arshapire Decimal? @db.Decimal(10, 2)
+  sortOrder Int      @default(0) @map("sort_order")
+
+  @@map("lens_catalog")
+}
+
+model LunaSinMedida {
+  id        String  @id @default(uuid()) @db.Uuid
+  nombre    String
+  precio    Decimal @db.Decimal(10, 2)
+  sortOrder Int     @default(0) @map("sort_order")
+
+  @@map("lunas_sin_medida")
+}
+
+model FabricationCost {
+  id     Int     @id
+  label  String
+  costOd Decimal @map("cost_od") @db.Decimal(10, 2)
+  costOi Decimal @map("cost_oi") @db.Decimal(10, 2)
+
+  @@map("fabrication_costs")
+}
