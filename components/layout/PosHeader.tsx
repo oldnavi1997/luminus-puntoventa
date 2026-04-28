@@ -20,8 +20,7 @@ export function PosHeader({ user }: PosHeaderProps) {
 
   const roleLabel: Record<string, string> = {
     CASHIER: "Cajero",
-    SUPERVISOR: "Supervisor",
-    ADMIN: "Admin",
+    ADMIN:   "Admin",
   };
 
   return (

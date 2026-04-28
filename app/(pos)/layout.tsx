@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { Sidebar } from "@/components/layout/Sidebar";
 
-const POS_ROLES = ["CASHIER", "SUPERVISOR", "ADMIN"];
+const POS_ROLES = ["CASHIER", "ADMIN"];
 
 export default async function PosLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);

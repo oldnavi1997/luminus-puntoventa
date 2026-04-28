@@ -12,7 +12,7 @@ export default async function CajaPage() {
   if (!session) redirect("/login");
 
   // Admin y Supervisor: vista global de todas las sesiones
-  if (session.user.role === "ADMIN" || session.user.role === "SUPERVISOR") {
+  if (session.user.role === "ADMIN") {
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
     const hoyInicio = new Date(`${today}T00:00:00-05:00`);
 

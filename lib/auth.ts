@@ -3,7 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
-const POS_ROLES = ["CASHIER", "SUPERVISOR", "ADMIN"] as const;
+const POS_ROLES = ["CASHIER", "ADMIN"] as const;
 
 export const authOptions: NextAuthOptions = {
   providers: [

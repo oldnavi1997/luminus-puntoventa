@@ -62,21 +62,6 @@ async function main() {
 
   console.log("  ✓ Cashier user: cajero@luminus.pe / Cajero123!");
 
-  // Supervisor user
-  const supervisorPassword = await bcrypt.hash("Super123!", 10);
-  await prisma.user.upsert({
-    where: { email: "supervisor@luminus.pe" },
-    update: { password: supervisorPassword, role: "SUPERVISOR" },
-    create: {
-      email: "supervisor@luminus.pe",
-      name: "Supervisor",
-      password: supervisorPassword,
-      role: "SUPERVISOR",
-    },
-  });
-
-  console.log("  ✓ Supervisor user: supervisor@luminus.pe / Super123!");
-
   // Calculador de Lunas — fabrication costs (10 filas, id estable 1-10)
   const fabricationCosts = [
     { id: 1,  label: "Esf ≤2 · Cil ≤2",       costOd: 47.50, costOi: 47.50 },

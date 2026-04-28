@@ -12,7 +12,7 @@ const AR_COLS = [
 ];
 
 const NEW_ROW_PREFIX = "new-";
-const EDIT_ROLES = new Set(["ADMIN", "SUPERVISOR"]);
+const EDIT_ROLES = new Set(["ADMIN"]);
 
 export default function LensCatalog() {
   const { data: session } = useSession();

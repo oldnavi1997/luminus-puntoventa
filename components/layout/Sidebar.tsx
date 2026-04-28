@@ -17,10 +17,10 @@ interface SidebarUser {
 
 const MAIN_NAV = [
   { href: "/pos",          label: "Punto de Venta",  icon: ShoppingCart, shortcut: "F1", roles: null },
-  { href: "/inventario",   label: "Inventario",      icon: Package,      shortcut: "F2", roles: ["ADMIN", "SUPERVISOR"] },
+  { href: "/inventario",   label: "Inventario",      icon: Package,      shortcut: "F2", roles: ["ADMIN"] },
   { href: "/comprobantes", label: "Comprobantes",        icon: FileText,        shortcut: "F3", roles: null },
   { href: "/convertir",    label: "Convertir NV",        icon: ArrowRightLeft,  shortcut: "F4", roles: null },
-  { href: "/dashboard",    label: "Dashboard",           icon: BarChart2,       shortcut: "F5", roles: ["ADMIN", "SUPERVISOR"] },
+  { href: "/dashboard",    label: "Dashboard",           icon: BarChart2,       shortcut: "F5", roles: ["ADMIN"] },
   { href: "/ventas",       label: "Historial",           icon: History,         shortcut: "F6", roles: null },
   { href: "/pendientes",   label: "Pendientes",          icon: Timer,           shortcut: "F7", roles: null },
   { href: "/sesion",       label: "Sesión de Caja",      icon: Clock,           shortcut: "F8", roles: null },
@@ -28,14 +28,13 @@ const MAIN_NAV = [
 ];
 
 const ADMIN_NAV = [
-  { href: "/caja",          label: "Control de Caja", icon: DollarSign, roles: ["ADMIN", "SUPERVISOR"] },
+  { href: "/caja",          label: "Control de Caja", icon: DollarSign, roles: ["ADMIN"] },
   { href: "/configuracion", label: "Configuración",   icon: Settings,   roles: ["ADMIN"] },
 ];
 
 const ROLE_LABEL: Record<string, string> = {
-  CASHIER:    "Cajero",
-  SUPERVISOR: "Supervisor",
-  ADMIN:      "Administrador",
+  CASHIER: "Cajero",
+  ADMIN:   "Administrador",
 };
 
 export function Sidebar({ user, cartCount }: { user: SidebarUser; cartCount?: number }) {

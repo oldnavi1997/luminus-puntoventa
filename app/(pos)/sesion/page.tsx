@@ -20,21 +20,48 @@ export default async function SesionPage() {
       })
     : null;
 
-  // Saldo sugerido para apertura: override de retiro admin, o efectivo esperado de última sesión
+  // Saldo sugerido para apertura: override de retiro admin, o efectivo real en caja (fondo + ventas desde último retiro)
   let suggestedBalance = 0;
   if (!activeSession) {
     const config = await prisma.cajaConfig.findUnique({ where: { id: "tienda" } });
     if (config?.nextOpeningOverride != null) {
       suggestedBalance = Number(config.nextOpeningOverride);
     } else {
-      const lastSession = await prisma.posSession.findFirst({
-        where: { status: "CLOSED" },
-        orderBy: { closedAt: "desc" },
-        select: { openingBalance: true, totalEfectivo: true },
-      });
-      suggestedBalance = lastSession
-        ? Number(lastSession.openingBalance) + Number(lastSession.totalEfectivo)
-        : 0;
+      const retiroAt = config?.lastRetiroAt ?? null;
+      const fondoAnterior = Number(config?.lastRetiroFondo ?? 0);
+      const [ventasCompletas, ventasPartial, ventasMixto] = await Promise.all([
+        prisma.saleDocument.aggregate({
+          where: {
+            location: "TIENDA",
+            paymentMethod: "EFECTIVO",
+            status: { notIn: ["VOIDED", "VOID_PENDING", "PARTIAL"] },
+            ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
+          },
+          _sum: { total: true },
+        }),
+        prisma.saleDocument.aggregate({
+          where: {
+            location: "TIENDA",
+            paymentMethod: "EFECTIVO",
+            status: "PARTIAL",
+            ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
+          },
+          _sum: { montoAdelanto: true },
+        }),
+        prisma.saleDocument.aggregate({
+          where: {
+            location: "TIENDA",
+            paymentMethod: "MIXTO",
+            status: { notIn: ["VOIDED", "VOID_PENDING"] },
+            ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
+          },
+          _sum: { montoEfectivo: true },
+        }),
+      ]);
+      const efectivoVentas = Number(ventasCompletas._sum.total ?? 0)
+                           + Number(ventasPartial._sum.montoAdelanto ?? 0)
+                           + Number(ventasMixto._sum.montoEfectivo ?? 0);
+      suggestedBalance = fondoAnterior + efectivoVentas;
     }
   }
 

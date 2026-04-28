@@ -9,7 +9,7 @@ const PatchSchema = z.object({
   costOi: z.number().nonnegative().optional(),
 });
 
-const EDIT_ROLES = ["ADMIN", "SUPERVISOR"];
+const EDIT_ROLES = ["ADMIN"];
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);

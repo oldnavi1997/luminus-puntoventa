@@ -6,7 +6,7 @@ import { Pencil, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import type { LunaSinMedidaRow } from "@/lib/calculador-lunas/types";
 
-const EDIT_ROLES = new Set(["ADMIN", "SUPERVISOR"]);
+const EDIT_ROLES = new Set(["ADMIN"]);
 
 export default function LunasSinMedida() {
   const { data: session } = useSession();

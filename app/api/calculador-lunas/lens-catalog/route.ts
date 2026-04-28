@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
-const EDIT_ROLES = ["ADMIN", "SUPERVISOR"];
+const EDIT_ROLES = ["ADMIN"];
 
 const CreateSchema = z.object({
   nombre:    z.string().min(1),

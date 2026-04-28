@@ -8,20 +8,18 @@ interface PosUser {
   id: string;
   name: string | null;
   email: string;
-  role: "CASHIER" | "SUPERVISOR" | "ADMIN";
+  role: "CASHIER" | "ADMIN";
   createdAt: string;
 }
 
 const ROLE_LABEL: Record<string, string> = {
-  CASHIER:    "Cajero",
-  SUPERVISOR: "Supervisor",
-  ADMIN:      "Administrador",
+  CASHIER: "Cajero",
+  ADMIN:   "Administrador",
 };
 
 const ROLE_COLOR: Record<string, string> = {
-  CASHIER:    "bg-surface-dark text-ink-3",
-  SUPERVISOR: "bg-accent/10 text-accent",
-  ADMIN:      "bg-success-soft text-success",
+  CASHIER: "bg-surface-dark text-ink-3",
+  ADMIN:   "bg-success-soft text-success",
 };
 
 interface UsuariosViewProps {
@@ -277,8 +275,8 @@ function UserFormModal({
 
           <div>
             <label className="block text-[12px] text-ink-3 mb-1">Rol</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {(["CASHIER", "SUPERVISOR", "ADMIN"] as const).map((r) => (
+            <div className="grid grid-cols-2 gap-1.5">
+              {(["CASHIER", "ADMIN"] as const).map((r) => (
                 <button
                   key={r}
                   onClick={() => setRole(r)}

@@ -7,7 +7,7 @@ import bcrypt from "bcryptjs";
 
 const PatchSchema = z.object({
   name:     z.string().min(2).optional(),
-  role:     z.enum(["CASHIER", "SUPERVISOR", "ADMIN"]).optional(),
+  role:     z.enum(["CASHIER", "ADMIN"]).optional(),
   password: z.string().min(6).optional(),
 });
 

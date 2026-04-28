@@ -9,7 +9,7 @@ const CreateSchema = z.object({
   name:     z.string().min(2),
   email:    z.string().email(),
   password: z.string().min(6),
-  role:     z.enum(["CASHIER", "SUPERVISOR", "ADMIN"]),
+  role:     z.enum(["CASHIER", "ADMIN"]),
 });
 
 export async function GET() {
@@ -18,7 +18,7 @@ export async function GET() {
   if (session.user.role !== "ADMIN") return NextResponse.json({ error: "Prohibido" }, { status: 403 });
 
   const users = await prisma.user.findMany({
-    where: { role: { in: ["CASHIER", "SUPERVISOR", "ADMIN"] } },
+    where: { role: { in: ["CASHIER", "ADMIN"] } },
     select: { id: true, name: true, email: true, role: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });

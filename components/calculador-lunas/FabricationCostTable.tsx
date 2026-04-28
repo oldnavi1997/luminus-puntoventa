@@ -39,7 +39,7 @@ const GROUPS = [
   },
 ];
 
-const EDIT_ROLES = new Set(["ADMIN", "SUPERVISOR"]);
+const EDIT_ROLES = new Set(["ADMIN"]);
 
 export default function FabricationCostTable({ costos, onUpdated }: Props) {
   const { data: session } = useSession();
