@@ -16,12 +16,13 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
+  const allHistory = req.nextUrl.searchParams.get("all") === "true" && session.user.role === "ADMIN";
   const date = req.nextUrl.searchParams.get("date") ?? new Date().toISOString().slice(0, 10);
   const start = new Date(`${date}T00:00:00-05:00`);
   const end   = new Date(`${date}T23:59:59.999-05:00`);
 
   const docs = await prisma.saleDocument.findMany({
-    where: { createdAt: { gte: start, lte: end } },
+    where: allHistory ? undefined : { createdAt: { gte: start, lte: end } },
     orderBy: { createdAt: "desc" },
     include: {
       cashier: { select: { name: true } },
@@ -51,6 +52,7 @@ export async function GET(req: NextRequest) {
     createdAt: d.createdAt.toISOString(),
     cashier: { name: d.cashier.name },
     saldoCobradoPor: d.saldoCobradoPor ? { name: d.saldoCobradoPor.name } : null,
+    saldoCobradoEn:  d.saldoCobradoEn ? d.saldoCobradoEn.toISOString() : null,
     items: d.items.map((i) => ({
       description: i.description,
       quantity: i.quantity,

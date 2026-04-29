@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { X, Banknote, CreditCard, Smartphone, Layers, CheckCircle, AlertCircle } from "lucide-react";
+import { X, Banknote, CreditCard, Smartphone, Layers, CheckCircle, AlertCircle, Printer } from "lucide-react";
 import { formatPEN } from "@/lib/utils";
+import { Receipt } from "@/components/pos/Receipt";
 
 interface PendienteDoc {
   id: string;
@@ -11,6 +12,8 @@ interface PendienteDoc {
   montoAdelanto: number;
   saldoPendiente: number;
   buyerName: string | null;
+  buyerDocNumber: string | null;
+  items: { description: string; quantity: number; unitPrice: number; lineTotal: number; sku: string | null }[];
 }
 
 interface CobrarSaldoModalProps {
@@ -37,6 +40,7 @@ export function CobrarSaldoModal({ doc, posSessionId, onSuccess, onClose }: Cobr
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [cambio, setCambio]   = useState(0);
+  const [printing, setPrinting] = useState(false);
 
   // Pago mixto
   const [splitEfectivo, setSplitEfectivo] = useState("");
@@ -116,6 +120,7 @@ export function CobrarSaldoModal({ doc, posSessionId, onSuccess, onClose }: Cobr
   );
 
   return (
+    <>
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-md border border-border">
         {/* Header */}
@@ -313,12 +318,21 @@ export function CobrarSaldoModal({ doc, posSessionId, onSuccess, onClose }: Cobr
                   </>
                 )}
               </div>
-              <button
-                onClick={() => { onSuccess(); onClose(); }}
-                className="w-full bg-ink hover:bg-ink-2 rounded-xl py-3 text-[14px] font-semibold text-white transition-colors"
-              >
-                Listo
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPrinting(true)}
+                  className="flex-1 flex items-center justify-center gap-2 bg-surface-light hover:bg-border rounded-xl py-3 text-[13px] font-medium text-ink transition-colors border border-border"
+                >
+                  <Printer size={15} />
+                  Imprimir ticket
+                </button>
+                <button
+                  onClick={() => { onSuccess(); onClose(); }}
+                  className="flex-1 bg-ink hover:bg-ink-2 rounded-xl py-3 text-[14px] font-semibold text-white transition-colors"
+                >
+                  Listo
+                </button>
+              </div>
             </div>
           )}
 
@@ -350,5 +364,27 @@ export function CobrarSaldoModal({ doc, posSessionId, onSuccess, onClose }: Cobr
         </div>
       </div>
     </div>
+
+    {printing && (
+      <Receipt
+        document={{
+          id:           doc.id,
+          fullNumber:   doc.fullNumber,
+          total:        doc.total,
+          cambio:       method === "EFECTIVO" ? cambio : 0,
+          montoAdelanto: null,
+          status:       "ACCEPTED",
+          pdfUrl:       null,
+          qrCode:       null,
+        }}
+        items={doc.items}
+        buyerName={doc.buyerName ?? undefined}
+        buyerDoc={doc.buyerDocNumber && doc.buyerDocNumber !== "00000000" ? doc.buyerDocNumber : undefined}
+        paymentMethod={method}
+        montoRecibido={method === "EFECTIVO" ? parseFloat(efectivoAmount) : doc.total}
+        onClose={() => setPrinting(false)}
+      />
+    )}
+  </>
   );
 }

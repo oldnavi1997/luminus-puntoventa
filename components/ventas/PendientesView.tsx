@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { Timer, RefreshCw, User, CalendarDays, Plus, X } from "lucide-react";
+import { Timer, RefreshCw, User, CalendarDays, Plus, X, ChevronRight, ChevronDown } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { CobrarSaldoModal } from "./CobrarSaldoModal";
 import { formatPEN } from "@/lib/utils";
@@ -11,6 +11,7 @@ interface PendienteDoc {
   id: string;
   fullNumber: string;
   type: string;
+  paymentMethod: string;
   total: number;
   montoAdelanto: number;
   saldoPendiente: number;
@@ -39,6 +40,15 @@ export function PendientesView({ posSessionId }: PendientesViewProps) {
   const [loading, setLoading] = useState(true);
   const [cobrando, setCobrando] = useState<PendienteDoc | null>(null);
   const [creando, setCreando] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleExpand(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
 
   const fetchDocs = useCallback(async () => {
     setLoading(true);
@@ -111,6 +121,7 @@ export function PendientesView({ posSessionId }: PendientesViewProps) {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-surface-light">
+                  <th className="w-8 px-3 py-2.5 border-b border-border" />
                   <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-wide text-ink-3 font-medium">Documento</th>
                   <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-wide text-ink-3 font-medium">Cliente</th>
                   <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-wide text-ink-3 font-medium">Fecha</th>
@@ -121,56 +132,105 @@ export function PendientesView({ posSessionId }: PendientesViewProps) {
                 </tr>
               </thead>
               <tbody>
-                {docs.map((doc) => (
-                  <tr key={doc.id} className="border-b border-border last:border-0 hover:bg-surface-light transition-colors">
-                    <td className="px-4 py-3">
-                      <p className="text-[13px] font-mono font-semibold text-ink">{doc.fullNumber}</p>
-                      <p className="text-[11px] text-ink-4 mt-0.5">{doc.cashier.name}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <User size={12} className="text-ink-4 shrink-0" />
-                        <div>
-                          <p className="text-[12.5px] text-ink">{doc.buyerName ?? "Sin nombre"}</p>
-                          {doc.buyerDocNumber && (
-                            <p className="text-[11px] text-ink-4 font-mono">{doc.buyerDocNumber}</p>
+                {docs.map((doc) => {
+                  const open = expanded.has(doc.id);
+                  const hora = new Date(doc.createdAt).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
+                  return (
+                    <>
+                      <tr
+                        key={doc.id}
+                        className="border-b border-border hover:bg-surface-light transition-colors cursor-pointer"
+                        onClick={() => toggleExpand(doc.id)}
+                      >
+                        <td className="px-3 py-3 border-b border-border text-ink-3">
+                          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-[13px] font-mono font-semibold text-ink">{doc.fullNumber}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <p className="text-[11px] text-ink-4">{doc.cashier.name}</p>
+                            <span className="text-ink-4">·</span>
+                            <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-surface-dark text-ink-3 font-medium">
+                              {METHOD_LABEL[doc.paymentMethod] ?? doc.paymentMethod}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <User size={12} className="text-ink-4 shrink-0" />
+                            <div>
+                              <p className="text-[12.5px] text-ink">{doc.buyerName ?? "Sin nombre"}</p>
+                              {doc.buyerDocNumber && doc.buyerDocNumber !== "00000000" && (
+                                <p className="text-[11px] text-ink-4 font-mono">{doc.buyerDocNumber}</p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <CalendarDays size={12} className="text-ink-4 shrink-0" />
+                            <div>
+                              <p className="text-[12.5px] text-ink-2">
+                                {new Date(doc.createdAt).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })}
+                              </p>
+                              <p className="text-[11px] text-ink-4 font-mono">{hora}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <p className="text-[13px] font-mono text-ink">{formatPEN(doc.total)}</p>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <p className="text-[13px] font-mono text-accent">{formatPEN(doc.montoAdelanto)}</p>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="inline-block px-2.5 py-1 rounded-full text-[12px] font-bold font-mono bg-amber-100 text-amber-700">
+                            {formatPEN(doc.saldoPendiente)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          {posSessionId ? (
+                            <button
+                              onClick={() => setCobrando(doc)}
+                              className="px-3 py-1.5 bg-accent hover:bg-accent-dark text-white text-[12px] font-semibold rounded-lg transition-colors"
+                            >
+                              Cobrar saldo
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-ink-4">Sin sesión</span>
                           )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <CalendarDays size={12} className="text-ink-4 shrink-0" />
-                        <p className="text-[12.5px] text-ink-2">
-                          {new Date(doc.createdAt).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <p className="text-[13px] font-mono text-ink">{formatPEN(doc.total)}</p>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <p className="text-[13px] font-mono text-accent">{formatPEN(doc.montoAdelanto)}</p>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="inline-block px-2.5 py-1 rounded-full text-[12px] font-bold font-mono bg-amber-100 text-amber-700">
-                        {formatPEN(doc.saldoPendiente)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {posSessionId ? (
-                        <button
-                          onClick={() => setCobrando(doc)}
-                          className="px-3 py-1.5 bg-accent hover:bg-accent-dark text-white text-[12px] font-semibold rounded-lg transition-colors"
-                        >
-                          Cobrar saldo
-                        </button>
-                      ) : (
-                        <span className="text-[11px] text-ink-4">Sin sesión</span>
+                        </td>
+                      </tr>
+
+                      {open && (
+                        <tr key={`${doc.id}-items`} className="bg-surface-light">
+                          <td colSpan={8} className="px-6 py-3 border-b border-border">
+                            <table className="w-full">
+                              <thead>
+                                <tr>
+                                  <th className="text-left text-[10.5px] uppercase tracking-wide text-ink-4 font-medium pb-1.5">Producto</th>
+                                  <th className="text-center text-[10.5px] uppercase tracking-wide text-ink-4 font-medium pb-1.5">Cant.</th>
+                                  <th className="text-right text-[10.5px] uppercase tracking-wide text-ink-4 font-medium pb-1.5">P. Unit.</th>
+                                  <th className="text-right text-[10.5px] uppercase tracking-wide text-ink-4 font-medium pb-1.5">Subtotal</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {doc.items.map((item, idx) => (
+                                  <tr key={idx}>
+                                    <td className="text-[12px] text-ink-2 py-0.5 pr-4">{item.description}</td>
+                                    <td className="text-[12px] text-ink-3 text-center py-0.5">{item.quantity}</td>
+                                    <td className="text-[12px] font-mono text-ink-3 text-right py-0.5">{formatPEN(item.unitPrice)}</td>
+                                    <td className="text-[12px] font-mono text-ink text-right py-0.5">{formatPEN(item.lineTotal)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                  </tr>
-                ))}
+                    </>
+                  );
+                })}
               </tbody>
             </table>
           </div>

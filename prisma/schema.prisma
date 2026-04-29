@@ -271,6 +271,7 @@ model SaleDocument {
   notes                String?
   saldoCobradoPorId    String?
   saldoCobradoPor      User?          @relation("DocumentSaldoCobrador", fields: [saldoCobradoPorId], references: [id])
+  saldoCobradoEn       DateTime?
   buyerPhone     String?
   prescription   Json?
   status         DocumentStatus @default(DRAFT)

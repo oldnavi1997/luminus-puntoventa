@@ -54,10 +54,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await tx.saleDocument.update({
         where: { id },
         data: {
-          status:           DocumentStatus.ACCEPTED,
-          montoRecibido:    total,
+          status:            DocumentStatus.ACCEPTED,
+          montoRecibido:     total,
           cambio,
           saldoCobradoPorId: session.user.id,
+          saldoCobradoEn:    new Date(),
         },
       });
 

@@ -36,6 +36,7 @@ interface Sale {
   createdAt: string;
   cashier: { name: string | null };
   saldoCobradoPor?: { name: string | null } | null;
+  saldoCobradoEn?:  string | null;
   items: SaleItem[];
 }
 
@@ -70,6 +71,13 @@ const STATUS_LABEL: Record<string, string> = {
   PARTIAL:      "Adelanto",
 };
 
+function formatSaldoFecha(iso: string): string {
+  return new Date(iso).toLocaleString("es-PE", {
+    day: "2-digit", month: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+}
+
 export function VentasView() {
   const { data: session } = useSession();
   const router = useRouter();
@@ -79,21 +87,23 @@ export function VentasView() {
   const [stats, setStats]     = useState<Stats>({ totalVentas: 0, countVentas: 0, ticketPromedio: 0 });
   const [loading, setLoading] = useState(true);
   const [date, setDate]       = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }));
+  const [allHistory, setAllHistory] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [locationFilter, setLocationFilter] = useState<"ALL" | "TIENDA" | "ALMACEN">("ALL");
   const [deleteDoc, setDeleteDoc]   = useState<Sale | null>(null);
   const [editingDoc, setEditingDoc] = useState<Sale | null>(null);
   const [printDoc,  setPrintDoc]    = useState<Sale | null>(null);
 
-  function fetchDocs(d: string) {
+  function fetchDocs(d: string, all = false) {
     setLoading(true);
-    fetch(`/api/ventas?date=${d}`)
+    const url = all ? "/api/ventas?all=true" : `/api/ventas?date=${d}`;
+    fetch(url)
       .then((r) => r.json())
       .then((data) => { setDocs(data.docs ?? []); setStats(data.stats); setLoading(false); })
       .catch(() => setLoading(false));
   }
 
-  useEffect(() => { fetchDocs(date); }, [date]);
+  useEffect(() => { fetchDocs(date, allHistory); }, [date, allHistory]);
 
   function toggleExpand(id: string) {
     setExpanded((prev) => {
@@ -120,7 +130,7 @@ export function VentasView() {
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3 mb-5">
           {[
-            { label: "Ventas del día", value: String(stats.countVentas), sub: "transacciones" },
+            { label: allHistory ? "Total ventas" : "Ventas del día", value: String(stats.countVentas), sub: "transacciones" },
             { label: "Total facturado",  value: formatPEN(stats.totalVentas),  sub: "monto bruto", color: "text-success" },
             { label: "Ticket promedio",  value: formatPEN(stats.ticketPromedio), sub: "por venta", color: "text-accent" },
           ].map((s) => (
@@ -136,18 +146,32 @@ export function VentasView() {
         <div className="bg-surface border border-border rounded-xl overflow-hidden">
           {/* Toolbar */}
           <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
-            />
-            {date !== today && (
+            {!allHistory && (
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
+              />
+            )}
+            {!allHistory && date !== today && (
               <button
                 onClick={() => setDate(today)}
                 className="text-[12px] text-ink-3 hover:text-ink px-3 py-2 bg-surface-light border border-border rounded-lg transition-colors"
               >
                 Hoy
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                onClick={() => { setAllHistory((v) => !v); setExpanded(new Set()); }}
+                className={`text-[12px] font-medium px-3 py-2 rounded-lg border transition-colors ${
+                  allHistory
+                    ? "bg-accent text-white border-accent"
+                    : "bg-surface-light text-ink-3 border-border hover:text-ink"
+                }`}
+              >
+                {allHistory ? "Todo el historial" : "Ver todo"}
               </button>
             )}
             {hasMultipleLocations && (
@@ -202,7 +226,13 @@ export function VentasView() {
               <tbody>
                 {filteredDocs.map((doc) => {
                   const open = expanded.has(doc.id);
-                  const time = new Date(doc.createdAt).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
+                  const createdDate = new Date(doc.createdAt);
+                  const time = allHistory
+                    ? createdDate.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "2-digit" })
+                    : createdDate.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
+                  const timeSecondary = allHistory
+                    ? createdDate.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })
+                    : null;
                   const hasExtra = doc.buyerPhone || doc.prescription;
                   return (
                     <>
@@ -214,7 +244,10 @@ export function VentasView() {
                         <td className="px-3 py-3 border-b border-border text-ink-3">
                           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                         </td>
-                        <td className="px-4 py-3 border-b border-border text-[12.5px] font-mono text-ink-3">{time}</td>
+                        <td className="px-4 py-3 border-b border-border text-[12.5px] font-mono text-ink-3">
+                          <span>{time}</span>
+                          {timeSecondary && <p className="text-[11px] text-ink-4">{timeSecondary}</p>}
+                        </td>
                         <td className="px-4 py-3 border-b border-border">
                           <span className="text-[13px] font-medium text-ink font-mono">{doc.fullNumber}</span>
                           <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded font-medium ${
@@ -235,9 +268,18 @@ export function VentasView() {
                         {hasAdelantos && (
                           <td className="px-4 py-3 border-b border-border text-[12.5px]">
                             {doc.montoAdelanto != null ? (
-                              doc.saldoCobradoPor
-                                ? <span className="text-ink-3">{doc.saldoCobradoPor.name ?? "—"}</span>
-                                : <span className="text-amber-600 font-medium">Pendiente</span>
+                              doc.saldoCobradoPor ? (
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-ink-3 leading-none">{doc.saldoCobradoPor.name ?? "—"}</span>
+                                  {doc.saldoCobradoEn && (
+                                    <span className="text-[10.5px] text-ink-4 font-mono leading-none">
+                                      {formatSaldoFecha(doc.saldoCobradoEn)}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-amber-600 font-medium">Pendiente</span>
+                              )
                             ) : (
                               <span className="text-ink-4">—</span>
                             )}
