@@ -87,7 +87,7 @@ export function buildApiSunatPayload(params: {
     cliente_tipo_de_documento: getDocTypeCode(params.cliente.docType),
     cliente_numero_de_documento: params.cliente.docNumber || "00000000",
     cliente_denominacion: params.cliente.name || "CLIENTE VARIOS",
-    cliente_direccion: params.cliente.address ?? "",
+    cliente_direccion: params.cliente.address || "-",
     total: params.totalConIGV.toFixed(2),
     items: params.items,
   };

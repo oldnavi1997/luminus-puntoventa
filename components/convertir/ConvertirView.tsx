@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ArrowRightLeft, X, CheckCircle, Clock } from "lucide-react";
+import { ArrowRightLeft, X, CheckCircle, Clock, Search, UserCheck, UserX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
@@ -30,6 +30,30 @@ function ConvertModal({ doc, onClose, onConverted }: {
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState("");
   const [result, setResult]             = useState<{ fullNumber: string; status: string } | null>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupStatus, setLookupStatus]   = useState<"idle" | "found" | "not_found">("idle");
+
+  async function lookupCustomer() {
+    if (!buyerDocNumber.trim()) return;
+    setLookupLoading(true);
+    setLookupStatus("idle");
+    try {
+      const res  = await fetch(`/api/clientes?docNumber=${encodeURIComponent(buyerDocNumber.trim())}`);
+      const json = await res.json();
+      if (json.customer) {
+        setBuyerName(json.customer.name);
+        setBuyerDocType(json.customer.docType);
+        setBuyerDocNumber(json.customer.docNumber);
+        setLookupStatus("found");
+      } else {
+        setLookupStatus("not_found");
+      }
+    } catch {
+      setLookupStatus("not_found");
+    } finally {
+      setLookupLoading(false);
+    }
+  }
 
   async function handleConvert() {
     setLoading(true);
@@ -116,29 +140,56 @@ function ConvertModal({ doc, onClose, onConverted }: {
               </div>
 
               <div className="space-y-2">
-                <input
-                  value={buyerName}
-                  onChange={(e) => setBuyerName(e.target.value)}
-                  placeholder="Nombre / Razón social"
-                  className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
-                />
                 <div className="flex gap-2">
                   <select
                     value={buyerDocType}
-                    onChange={(e) => setBuyerDocType(e.target.value)}
+                    onChange={(e) => { setBuyerDocType(e.target.value); setLookupStatus("idle"); }}
                     className="bg-surface-light border border-border rounded-lg px-2 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
                   >
                     <option value="DNI">DNI</option>
                     <option value="RUC">RUC</option>
                     <option value="CE">CE</option>
                   </select>
-                  <input
-                    value={buyerDocNumber}
-                    onChange={(e) => setBuyerDocNumber(e.target.value)}
-                    placeholder={docType === "FACTURA" ? "RUC (11 dígitos)" : "Número"}
-                    className="flex-1 bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent font-mono"
-                  />
+                  <div className="relative flex-1">
+                    <input
+                      value={buyerDocNumber}
+                      onChange={(e) => { setBuyerDocNumber(e.target.value); setLookupStatus("idle"); }}
+                      onKeyDown={(e) => e.key === "Enter" && lookupCustomer()}
+                      placeholder={docType === "FACTURA" ? "RUC (11 dígitos)" : "DNI / RUC"}
+                      className="w-full bg-surface-light border border-border rounded-lg pl-3 pr-8 py-2 text-[13px] text-ink focus:outline-none focus:border-accent font-mono"
+                    />
+                    {lookupStatus === "found" && (
+                      <UserCheck size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-success" />
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={lookupCustomer}
+                    disabled={lookupLoading || !buyerDocNumber.trim()}
+                    className="bg-surface-light hover:bg-border border border-border rounded-lg px-3 py-2 text-[13px] text-ink transition-colors disabled:opacity-40"
+                  >
+                    {lookupLoading ? "..." : <Search size={13} />}
+                  </button>
                 </div>
+
+                {lookupStatus === "found" && (
+                  <p className="text-[11px] text-success flex items-center gap-1">
+                    <UserCheck size={11} /> Encontrado — datos autocompletados
+                  </p>
+                )}
+                {lookupStatus === "not_found" && (
+                  <p className="text-[11px] text-warning flex items-center gap-1">
+                    <UserX size={11} /> No encontrado — ingresa el nombre manualmente
+                  </p>
+                )}
+
+                <input
+                  value={buyerName}
+                  onChange={(e) => setBuyerName(e.target.value)}
+                  placeholder="Nombre / Razón social"
+                  className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
+                />
+
                 {docType === "FACTURA" && buyerDocNumber.length > 0 && buyerDocNumber.length !== 11 && (
                   <p className="text-[11px] text-warning">El RUC debe tener 11 dígitos</p>
                 )}

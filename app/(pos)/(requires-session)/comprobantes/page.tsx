@@ -9,5 +9,6 @@ export default async function ComprobantesPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
 
-  return <ComprobantesView />;
+  const isAdmin = session.user.role === "ADMIN";
+  return <ComprobantesView isAdmin={isAdmin} />;
 }

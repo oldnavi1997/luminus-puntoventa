@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { FileText, Download } from "lucide-react";
+import { FileText, Download, XCircle } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
 
@@ -29,14 +29,15 @@ interface Stats {
 }
 
 type TypeFilter   = "all" | "BOLETA" | "FACTURA";
-type StatusFilter = "all" | "ACCEPTED" | "PENDING" | "REJECTED";
+type StatusFilter = "all" | "ACCEPTED" | "PENDING" | "REJECTED" | "VOIDED";
 
 const STATUS_LABEL: Record<string, string> = {
-  ACCEPTED: "Aceptado",
-  PENDING:  "Pendiente",
-  REJECTED: "Rechazado",
-  DRAFT:    "Borrador",
-  VOIDED:   "Anulado",
+  ACCEPTED:     "Aceptado",
+  PENDING:      "Pendiente",
+  REJECTED:     "Rechazado",
+  DRAFT:        "Borrador",
+  VOIDED:       "Anulado",
+  VOID_PENDING: "Anulando...",
 };
 
 const METHOD_LABEL: Record<string, string> = {
@@ -45,13 +46,18 @@ const METHOD_LABEL: Record<string, string> = {
   YAPE:     "Yape",
 };
 
-export function ComprobantesView() {
+export function ComprobantesView({ isAdmin }: { isAdmin: boolean }) {
   const [docs,    setDocs]    = useState<Doc[]>([]);
   const [stats,   setStats]   = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [type,    setType]    = useState<TypeFilter>("all");
   const [status,  setStatus]  = useState<StatusFilter>("all");
   const [date,    setDate]    = useState(new Date().toISOString().slice(0, 10));
+
+  const [voidDoc,     setVoidDoc]     = useState<Doc | null>(null);
+  const [voidMotivo,  setVoidMotivo]  = useState("");
+  const [voidLoading, setVoidLoading] = useState(false);
+  const [voidError,   setVoidError]   = useState("");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -68,6 +74,28 @@ export function ComprobantesView() {
   }, [type, status, date]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  async function handleVoid() {
+    if (!voidDoc || voidMotivo.trim().length < 5) return;
+    setVoidLoading(true);
+    setVoidError("");
+    try {
+      const res  = await fetch(`/api/ventas/${voidDoc.id}/anular`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo: voidMotivo }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Error al anular");
+      setVoidDoc(null);
+      setVoidMotivo("");
+      fetchData();
+    } catch (e) {
+      setVoidError(e instanceof Error ? e.message : "Error al anular");
+    } finally {
+      setVoidLoading(false);
+    }
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -119,7 +147,7 @@ export function ComprobantesView() {
 
             {/* Status filter */}
             <div className="flex bg-surface-light rounded-lg p-0.5 gap-0.5 border border-border">
-              {(["all", "ACCEPTED", "PENDING", "REJECTED"] as StatusFilter[]).map((s) => (
+              {(["all", "ACCEPTED", "PENDING", "REJECTED", "VOIDED"] as StatusFilter[]).map((s) => (
                 <button
                   key={s}
                   onClick={() => setStatus(s)}
@@ -162,7 +190,7 @@ export function ComprobantesView() {
               </thead>
               <tbody>
                 {docs.map((d) => (
-                  <tr key={d.id} className="hover:bg-surface-light transition-colors">
+                  <tr key={d.id} className={`hover:bg-surface-light transition-colors ${d.status === "VOIDED" ? "opacity-50" : ""}`}>
                     <td className="px-4 py-3 border-b border-border w-14">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10.5px] font-semibold tracking-wide ${
                         d.type === "FACTURA"    ? "bg-accent-soft text-accent"   :
@@ -189,9 +217,11 @@ export function ComprobantesView() {
                     </td>
                     <td className="px-4 py-3 border-b border-border text-right">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
-                        d.status === "ACCEPTED" ? "bg-success-soft text-success" :
-                        d.status === "PENDING"  ? "bg-warning-soft text-warning" :
-                        d.status === "REJECTED" ? "bg-danger-soft text-danger"   :
+                        d.status === "ACCEPTED"     ? "bg-success-soft text-success" :
+                        d.status === "PENDING"      ? "bg-warning-soft text-warning" :
+                        d.status === "REJECTED"     ? "bg-danger-soft text-danger"   :
+                        d.status === "VOID_PENDING" ? "bg-warning-soft text-warning" :
+                        d.status === "VOIDED"       ? "bg-surface-dark text-ink-3"   :
                         "bg-surface-light text-ink-3"
                       }`}>
                         <span className="w-1.5 h-1.5 rounded-full bg-current shrink-0" />
@@ -199,16 +229,26 @@ export function ComprobantesView() {
                       </span>
                     </td>
                     <td className="px-4 py-3 border-b border-border text-right">
-                      {d.pdfUrl && (
-                        <a
-                          href={d.pdfUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[12px] text-ink-3 hover:text-ink bg-surface-light hover:bg-border px-3 py-1 rounded-lg transition-colors border border-border"
-                        >
-                          PDF
-                        </a>
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        {d.pdfUrl && (
+                          <a
+                            href={d.pdfUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[12px] text-ink-3 hover:text-ink bg-surface-light hover:bg-border px-3 py-1 rounded-lg transition-colors border border-border"
+                          >
+                            PDF
+                          </a>
+                        )}
+                        {isAdmin && d.status === "ACCEPTED" && d.type !== "NOTA_VENTA" && (
+                          <button
+                            onClick={() => { setVoidDoc(d); setVoidMotivo(""); setVoidError(""); }}
+                            className="text-[12px] text-danger bg-danger-soft hover:bg-danger/20 px-3 py-1 rounded-lg transition-colors border border-danger/20"
+                          >
+                            Anular
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -217,6 +257,59 @@ export function ComprobantesView() {
           )}
         </div>
       </div>
+
+      {/* Modal anulación */}
+      {voidDoc && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-sm border border-border p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <XCircle size={20} className="text-danger shrink-0" />
+              <div>
+                <h2 className="font-semibold text-ink text-[15px]">Anular comprobante</h2>
+                <p className="text-[11px] font-mono text-ink-3">{voidDoc.fullNumber} · {formatPEN(voidDoc.total)}</p>
+              </div>
+            </div>
+
+            <p className="text-[12.5px] text-ink-3">
+              Esta acción enviará un comunicado de baja a SUNAT y no se puede deshacer.
+            </p>
+
+            <div>
+              <label className="text-[11px] uppercase tracking-wide text-ink-3 font-medium mb-1 block">
+                Motivo de anulación *
+              </label>
+              <textarea
+                value={voidMotivo}
+                onChange={(e) => setVoidMotivo(e.target.value)}
+                placeholder="Ej: Error en datos del cliente"
+                rows={2}
+                className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-danger resize-none"
+              />
+              {voidMotivo.trim().length > 0 && voidMotivo.trim().length < 5 && (
+                <p className="text-[11px] text-warning mt-1">Mínimo 5 caracteres</p>
+              )}
+            </div>
+
+            {voidError && <p className="text-[12px] text-danger">{voidError}</p>}
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setVoidDoc(null)}
+                className="flex-1 bg-surface-light border border-border rounded-xl py-2.5 text-[13px] text-ink hover:bg-border transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleVoid}
+                disabled={voidLoading || voidMotivo.trim().length < 5}
+                className="flex-1 bg-danger hover:bg-danger-dark disabled:opacity-40 text-white rounded-xl py-2.5 text-[13px] font-semibold transition-colors"
+              >
+                {voidLoading ? "Anulando..." : "Confirmar anulación"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
