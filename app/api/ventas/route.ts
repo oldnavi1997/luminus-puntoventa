@@ -51,8 +51,9 @@ export async function GET(req: NextRequest) {
     prescription: d.prescription ?? null,
     createdAt: d.createdAt.toISOString(),
     cashier: { name: d.cashier.name },
-    saldoCobradoPor: d.saldoCobradoPor ? { name: d.saldoCobradoPor.name } : null,
-    saldoCobradoEn:  d.saldoCobradoEn ? d.saldoCobradoEn.toISOString() : null,
+    saldoCobradoPor:    d.saldoCobradoPor ? { name: d.saldoCobradoPor.name } : null,
+    saldoCobradoEn:     d.saldoCobradoEn ? d.saldoCobradoEn.toISOString() : null,
+    saldoPaymentMethod: d.saldoPaymentMethod ?? null,
     items: d.items.map((i) => ({
       description: i.description,
       quantity: i.quantity,

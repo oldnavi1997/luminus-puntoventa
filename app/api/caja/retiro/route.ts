@@ -29,7 +29,8 @@ export async function POST(req: NextRequest) {
   const fondoAnterior = Number(config?.lastRetiroFondo ?? 0);
 
   // Calcular efectivo: ventas completas + adelantos PARTIAL + porción efectivo de MIXTO
-  const [ventasCompletas, ventasPartial, ventasMixto] = await Promise.all([
+  // + saldos cobrados en efectivo sobre documentos creados antes del último retiro
+  const [ventasCompletas, ventasPartial, ventasMixto, saldosPostRetiro] = await Promise.all([
     prisma.saleDocument.aggregate({
       where: {
         location,
@@ -57,11 +58,24 @@ export async function POST(req: NextRequest) {
       },
       _sum: { montoEfectivo: true },
     }),
+    prisma.saleDocument.aggregate({
+      where: retiroAt ? {
+        location,
+        status: "ACCEPTED",
+        montoAdelanto: { not: null },
+        saldoPaymentMethod: "EFECTIVO",
+        createdAt: { lte: retiroAt },
+        saldoCobradoEn: { gt: retiroAt },
+      } : { id: { equals: "" } },
+      _sum: { total: true, montoAdelanto: true },
+    }),
   ]);
 
   const efectivoVentas = Number(ventasCompletas._sum.total ?? 0)
                        + Number(ventasPartial._sum.montoAdelanto ?? 0)
-                       + Number(ventasMixto._sum.montoEfectivo ?? 0);
+                       + Number(ventasMixto._sum.montoEfectivo ?? 0)
+                       + Number(saldosPostRetiro._sum.total ?? 0)
+                       - Number(saldosPostRetiro._sum.montoAdelanto ?? 0);
   const efectivoDisponible = fondoAnterior + efectivoVentas;
   const montoRetirado = Math.max(0, efectivoDisponible - montoQueQueda);
 

@@ -32,9 +32,11 @@ export default async function CajaPage() {
       tEfectivo,
       tEfectivoPartial,
       tMixtoEfectivo,
+      tSaldosPostRetiro,
       aEfectivo,
       aEfectivoPartial,
       aMixtoEfectivo,
+      aSaldosPostRetiro,
       retirosTiendaRaw,
       retirosAlmacenRaw,
     ] = await Promise.all([
@@ -80,6 +82,18 @@ export default async function CajaPage() {
         },
         _sum: { montoEfectivo: true },
       }),
+      // TIENDA: saldos cobrados en efectivo sobre documentos creados antes del último retiro
+      prisma.saleDocument.aggregate({
+        where: retiroTiendaAt ? {
+          location: "TIENDA",
+          status: "ACCEPTED",
+          montoAdelanto: { not: null },
+          saldoPaymentMethod: "EFECTIVO",
+          createdAt: { lte: retiroTiendaAt },
+          saldoCobradoEn: { gt: retiroTiendaAt },
+        } : { id: { equals: "" } },
+        _sum: { total: true, montoAdelanto: true },
+      }),
       // ALMACEN: efectivo ventas completas
       prisma.saleDocument.aggregate({
         where: {
@@ -112,6 +126,18 @@ export default async function CajaPage() {
         },
         _sum: { montoEfectivo: true },
       }),
+      // ALMACEN: saldos cobrados en efectivo sobre documentos creados antes del último retiro
+      prisma.saleDocument.aggregate({
+        where: retiroAlmacenAt ? {
+          location: "ALMACEN",
+          status: "ACCEPTED",
+          montoAdelanto: { not: null },
+          saldoPaymentMethod: "EFECTIVO",
+          createdAt: { lte: retiroAlmacenAt },
+          saldoCobradoEn: { gt: retiroAlmacenAt },
+        } : { id: { equals: "" } },
+        _sum: { total: true, montoAdelanto: true },
+      }),
       prisma.cajaRetiro.findMany({
         where: { createdAt: { gte: hoyInicio }, location: "TIENDA" },
         include: { registradoPor: { select: { name: true, email: true } } },
@@ -126,12 +152,16 @@ export default async function CajaPage() {
 
     const tiendaEfectivoVentas = Number(tEfectivo._sum.total ?? 0)
                                + Number(tEfectivoPartial._sum.montoAdelanto ?? 0)
-                               + Number(tMixtoEfectivo._sum.montoEfectivo ?? 0);
+                               + Number(tMixtoEfectivo._sum.montoEfectivo ?? 0)
+                               + Number(tSaldosPostRetiro._sum.total ?? 0)
+                               - Number(tSaldosPostRetiro._sum.montoAdelanto ?? 0);
     const tiendaCount = tEfectivo._count.id + tEfectivoPartial._count.id;
 
     const almacenEfectivoVentas = Number(aEfectivo._sum.total ?? 0)
                                 + Number(aEfectivoPartial._sum.montoAdelanto ?? 0)
-                                + Number(aMixtoEfectivo._sum.montoEfectivo ?? 0);
+                                + Number(aMixtoEfectivo._sum.montoEfectivo ?? 0)
+                                + Number(aSaldosPostRetiro._sum.total ?? 0)
+                                - Number(aSaldosPostRetiro._sum.montoAdelanto ?? 0);
     const almacenCount = aEfectivo._count.id + aEfectivoPartial._count.id;
 
     const sesiones = sesionesAbiertas.map((s) => ({

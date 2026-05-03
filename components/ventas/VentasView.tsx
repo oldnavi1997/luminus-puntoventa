@@ -37,6 +37,7 @@ interface Sale {
   cashier: { name: string | null };
   saldoCobradoPor?: { name: string | null } | null;
   saldoCobradoEn?:  string | null;
+  saldoPaymentMethod?: string | null;
   items: SaleItem[];
 }
 
@@ -313,6 +314,20 @@ export function VentasView() {
                         </td>
                         <td className="px-4 py-3 border-b border-border text-right">
                           <span className="text-[13px] font-semibold font-mono text-ink">{formatPEN(doc.total)}</span>
+                          {doc.montoAdelanto != null && (
+                            <div className="text-[11px] font-mono mt-0.5 space-y-0.5">
+                              <div className="text-ink-3">
+                                Ade: {formatPEN(doc.montoAdelanto)}
+                                <span className="ml-1 text-[10px] text-ink-4">({METHOD_LABEL[doc.paymentMethod] ?? doc.paymentMethod})</span>
+                              </div>
+                              <div className={doc.status === "PARTIAL" ? "text-amber-600" : "text-success"}>
+                                Sal: {formatPEN(Math.round((doc.total - doc.montoAdelanto) * 100) / 100)}
+                                {doc.saldoPaymentMethod && (
+                                  <span className="ml-1 text-[10px] opacity-70">({METHOD_LABEL[doc.saldoPaymentMethod] ?? doc.saldoPaymentMethod})</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 border-b border-border" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1.5 justify-end">
