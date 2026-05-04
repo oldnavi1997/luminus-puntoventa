@@ -37,7 +37,6 @@ export async function GET(req: NextRequest) {
           trackInventory: true,
           active: true,
           images: true,
-          color: true,
           categories: { select: { id: true, name: true, slug: true } },
         },
       },
@@ -70,7 +69,6 @@ export async function GET(req: NextRequest) {
       trackInventory: p.trackInventory,
       active: p.active,
       images: p.images,
-      color: p.color,
       categories: p.categories,
       totalVendido,
     }));
