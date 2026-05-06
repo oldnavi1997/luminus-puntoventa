@@ -70,7 +70,9 @@ export async function emitirDocumento(
 
 // ─── Consulta de personas y empresas ─────────────────────────────────────────
 
-const LOOKUP_BASE_URL = "https://dev.apisunat.pe/api/v1";
+const LOOKUP_BASE_URL = process.env.APISUNAT_BASE_URL
+  ? new URL(process.env.APISUNAT_BASE_URL).origin + "/api/v1"
+  : "https://dev.apisunat.pe/api/v1";
 
 export interface ApiSunatDniResponse {
   dni: string;
