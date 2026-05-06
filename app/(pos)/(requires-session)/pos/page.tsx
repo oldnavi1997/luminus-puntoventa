@@ -10,10 +10,12 @@ export default async function PosPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
 
-  const posSession = await prisma.posSession.findUnique({
-    where: { id: session.user.posSessionId ?? undefined },
-    select: { openedAt: true },
-  });
+  const posSession = session.user.posSessionId
+    ? await prisma.posSession.findUnique({
+        where: { id: session.user.posSessionId },
+        select: { openedAt: true },
+      })
+    : null;
 
   return (
     <PosTerminal
