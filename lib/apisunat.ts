@@ -74,6 +74,8 @@ const LOOKUP_BASE_URL = process.env.APISUNAT_BASE_URL
   ? new URL(process.env.APISUNAT_BASE_URL).origin + "/api/v1"
   : "https://dev.apisunat.pe/api/v1";
 
+const DECOLECTA_TOKEN = process.env.DECOLECTA_TOKEN;
+
 export interface ApiSunatDniResponse {
   dni: string;
   nombres: string;
@@ -154,6 +156,24 @@ export async function anularDocumento(params: {
 }
 
 export async function consultarDNI(dni: string): Promise<ApiSunatDniResponse | null> {
+  if (DECOLECTA_TOKEN) {
+    try {
+      const res = await fetch(`https://api.decolecta.com/v1/reniec/dni?numero=${dni}`, {
+        headers: { Authorization: `Bearer ${DECOLECTA_TOKEN}`, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return null;
+      const json = await res.json() as { first_name?: string; first_last_name?: string; second_last_name?: string; document_number?: string };
+      return {
+        dni: json.document_number ?? dni,
+        nombres: json.first_name ?? "",
+        apellido_paterno: json.first_last_name ?? "",
+        apellido_materno: json.second_last_name ?? "",
+      };
+    } catch {
+      return null;
+    }
+  }
   try {
     const res = await fetch(`${LOOKUP_BASE_URL}/person/dni/${dni}`, {
       headers: { Authorization: `Bearer ${TOKEN}` },
@@ -169,6 +189,23 @@ export async function consultarDNI(dni: string): Promise<ApiSunatDniResponse | n
 }
 
 export async function consultarRUC(ruc: string): Promise<ApiSunatRucResponse | null> {
+  if (DECOLECTA_TOKEN) {
+    try {
+      const res = await fetch(`https://api.decolecta.com/v1/sunat/ruc?numero=${ruc}`, {
+        headers: { Authorization: `Bearer ${DECOLECTA_TOKEN}`, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return null;
+      const json = await res.json() as { razon_social?: string; numero_documento?: string; direccion?: string };
+      return {
+        ruc: json.numero_documento ?? ruc,
+        razon_social: json.razon_social,
+        direccion: json.direccion,
+      };
+    } catch {
+      return null;
+    }
+  }
   try {
     const res = await fetch(`${LOOKUP_BASE_URL}/business/ruc/${ruc}`, {
       headers: { Authorization: `Bearer ${TOKEN}` },
