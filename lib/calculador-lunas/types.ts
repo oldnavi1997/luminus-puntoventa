@@ -22,13 +22,18 @@ export interface LunaSinMedidaRow {
   sortOrder: number;
 }
 
+export interface TarifaLunaRow {
+  id: number;
+  esfMin: number;
+  esfMax: number;
+  cilMin: number;
+  cilMax: number;
+  poli: number;
+  foto: number;
+}
+
 export interface Desglose {
-  pOdEsf: number;
-  pOdCil: number;
-  pOiEsf: number;
-  pOiCil: number;
-  subtotalOD: number;
-  subtotalOI: number;
-  total: number;
+  totalPoli: number;
+  totalFoto: number;
   hasValues: boolean;
 }

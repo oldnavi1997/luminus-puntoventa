@@ -380,3 +380,15 @@ model FabricationCost {
 
   @@map("fabrication_costs")
 }
+
+model TarifaLuna {
+  id     Int     @id @default(autoincrement())
+  esfMin Decimal @map("esf_min") @db.Decimal(4, 2)
+  esfMax Decimal @map("esf_max") @db.Decimal(4, 2)
+  cilMin Decimal @map("cil_min") @db.Decimal(4, 2)
+  cilMax Decimal @map("cil_max") @db.Decimal(4, 2)
+  poli   Decimal @db.Decimal(6, 2)
+  foto   Decimal @db.Decimal(6, 2)
+
+  @@map("tarifas_luna")
+}

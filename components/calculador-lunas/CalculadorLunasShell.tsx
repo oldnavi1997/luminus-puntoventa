@@ -4,44 +4,30 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import PrescriptionForm from "./PrescriptionForm";
 import CostBreakdown from "./CostBreakdown";
-import FabricationCostTable from "./FabricationCostTable";
+import TarifasTable from "./TarifasTable";
 import LensCatalog from "./LensCatalog";
 import LunasSinMedida from "./LunasSinMedida";
-import { calcularDesglose } from "@/lib/calculador-lunas/calculo";
-import type { FabricationCostRow, Desglose } from "@/lib/calculador-lunas/types";
+import { calcularDesglose, TARIFAS_DEFAULT } from "@/lib/calculador-lunas/calculo";
+import type { TarifaLunaRow } from "@/lib/calculador-lunas/types";
 
 type PrescriptionField = "odSphere" | "odCylinder" | "oiSphere" | "oiCylinder";
 
-const EMPTY_DESGLOSE: Desglose = {
-  pOdEsf: 0, pOdCil: 0, pOiEsf: 0, pOiCil: 0,
-  subtotalOD: 0, subtotalOI: 0, total: 0, hasValues: false,
-};
-
 export default function CalculadorLunasShell() {
-  const [odSphere,   setOdSphere]   = useState("");
-  const [odCylinder, setOdCylinder] = useState("");
-  const [oiSphere,   setOiSphere]   = useState("");
-  const [oiCylinder, setOiCylinder] = useState("");
+  const [odSphere,   setOdSphere]   = useState("0.00");
+  const [odCylinder, setOdCylinder] = useState("0.00");
+  const [oiSphere,   setOiSphere]   = useState("0.00");
+  const [oiCylinder, setOiCylinder] = useState("0.00");
 
-  const [costos, setCostos]   = useState<FabricationCostRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tarifas, setTarifas] = useState<TarifaLunaRow[]>(TARIFAS_DEFAULT);
 
   useEffect(() => {
-    fetch("/api/calculador-lunas/fabrication-costs")
+    fetch("/api/calculador-lunas/tarifas")
       .then((r) => r.json())
-      .then((data: FabricationCostRow[]) => {
-        setCostos(data);
-        setLoading(false);
-      })
-      .catch(() => {
-        toast.error("No se pudo cargar la tabla de costos");
-        setLoading(false);
-      });
+      .then((data: TarifaLunaRow[]) => setTarifas(data))
+      .catch(() => toast.error("No se pudieron cargar las tarifas"));
   }, []);
 
-  const desglose = loading
-    ? EMPTY_DESGLOSE
-    : calcularDesglose(odSphere, odCylinder, oiSphere, oiCylinder, costos);
+  const desglose = calcularDesglose(odSphere, odCylinder, oiSphere, oiCylinder, tarifas);
 
   function handleChange(field: PrescriptionField, value: string) {
     const setters: Record<PrescriptionField, (v: string) => void> = {
@@ -71,7 +57,7 @@ export default function CalculadorLunasShell() {
               onChange={handleChange}
             />
             <CostBreakdown desglose={desglose} />
-            <FabricationCostTable costos={costos} onUpdated={setCostos} />
+            <TarifasTable tarifas={tarifas} onUpdated={setTarifas} />
           </div>
           <div className="lg:col-span-8">
             <LensCatalog />
