@@ -552,7 +552,7 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
             quantity: i.quantity,
             unitPrice: i.price,
             lineTotal: (i.price + (i.lensPrice ?? 0)) * i.quantity,
-            sku: null,
+            sku: i.sku ?? null,
           }))}
           buyerName={saleCustomer?.name}
           buyerDoc={saleCustomer ? `${saleCustomer.docType} ${saleCustomer.docNumber}` : undefined}

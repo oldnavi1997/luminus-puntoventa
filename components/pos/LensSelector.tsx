@@ -103,6 +103,7 @@ export function LensSelector({ product, onClose }: LensSelectorProps) {
       id: product.id,
       cartKey,
       name: product.name,
+      sku: product.sku,
       price: product.price,
       imageUrl: product.images[0],
       quantity: 1,
