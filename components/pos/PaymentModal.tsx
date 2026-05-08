@@ -48,6 +48,7 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
   const [errorMsg, setErrorMsg] = useState("");
   const [showReceipt, setShowReceipt] = useState(false);
   const [saleItems, setSaleItems] = useState<ReturnType<typeof useCartStore.getState>["items"]>([]);
+  const [saleCustomer, setSaleCustomer] = useState<PosCustomer | null>(null);
   const [esAdelanto, setEsAdelanto] = useState(false);
   const [adelantoAmount, setAdelantoAmount] = useState("");
 
@@ -135,6 +136,7 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Error desconocido");
       setSaleItems([...items]);
+      setSaleCustomer(customer);
       setSaleResult({ ...json, cambio });
       setStep("success");
       clearCart();
@@ -499,7 +501,7 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
                 )}
                 <div className="flex justify-between text-[13px]">
                   <span className="text-ink-3">Cliente</span>
-                  <span className="text-ink">{customer?.name ?? "Consumidor final"}</span>
+                  <span className="text-ink">{saleCustomer?.name ?? "Consumidor final"}</span>
                 </div>
               </div>
 
@@ -552,7 +554,8 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
             lineTotal: (i.price + (i.lensPrice ?? 0)) * i.quantity,
             sku: null,
           }))}
-          buyerName={customer?.name}
+          buyerName={saleCustomer?.name}
+          buyerDoc={saleCustomer ? `${saleCustomer.docType} ${saleCustomer.docNumber}` : undefined}
           paymentMethod={method}
           montoRecibido={method === "EFECTIVO" && efectivoAmount ? parseFloat(efectivoAmount) : undefined}
           onClose={() => setShowReceipt(false)}

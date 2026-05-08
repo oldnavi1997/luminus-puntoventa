@@ -105,9 +105,9 @@ const VentaSchema = z.object({
     docType: z.string().default("DNI"),
     docNumber: z.string().default("00000000"),
     name: z.string().default("CLIENTE VARIOS"),
-    address: z.string().optional(),
-    email: z.string().optional(),
-    customerId: z.string().optional(),
+    address: z.string().nullish(),
+    email: z.string().nullish(),
+    customerId: z.string().nullish(),
   }).optional(),
 });
 
