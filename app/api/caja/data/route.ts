@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { calcularEfectivoDisponible } from "@/lib/cash-flow";
 
 export const dynamic = "force-dynamic";
 
@@ -18,93 +19,19 @@ export async function GET() {
     prisma.cajaConfig.findUnique({ where: { id: "almacen" } }),
   ]);
 
-  const retiroTiendaAt = configTienda?.lastRetiroAt ?? null;
-  const retiroAlmacenAt = configAlmacen?.lastRetiroAt ?? null;
-
   const [
-    tEfectivo, tEfectivoPartial, tMixtoEfectivo, tSaldosPostRetiro,
-    aEfectivo, aEfectivoPartial, aMixtoEfectivo, aSaldosPostRetiro,
+    tiendaCash, almacenCash,
     retirosTiendaRaw, retirosAlmacenRaw,
   ] = await Promise.all([
-    prisma.saleDocument.aggregate({
-      where: {
-        location: "TIENDA",
-        paymentMethod: "EFECTIVO",
-        status: { notIn: ["VOIDED", "VOID_PENDING", "PARTIAL"] },
-        ...(retiroTiendaAt ? { createdAt: { gt: retiroTiendaAt } } : {}),
-      },
-      _sum: { total: true },
-      _count: { id: true },
+    calcularEfectivoDisponible({
+      location: "TIENDA",
+      retiroAt: configTienda?.lastRetiroAt ?? null,
+      fondoAnterior: Number(configTienda?.lastRetiroFondo ?? 0),
     }),
-    prisma.saleDocument.aggregate({
-      where: {
-        location: "TIENDA",
-        paymentMethod: "EFECTIVO",
-        status: "PARTIAL",
-        ...(retiroTiendaAt ? { createdAt: { gt: retiroTiendaAt } } : {}),
-      },
-      _sum: { montoAdelanto: true },
-      _count: { id: true },
-    }),
-    prisma.saleDocument.aggregate({
-      where: {
-        location: "TIENDA",
-        paymentMethod: "MIXTO",
-        status: { notIn: ["VOIDED", "VOID_PENDING"] },
-        ...(retiroTiendaAt ? { createdAt: { gt: retiroTiendaAt } } : {}),
-      },
-      _sum: { montoEfectivo: true },
-    }),
-    prisma.saleDocument.aggregate({
-      where: retiroTiendaAt ? {
-        location: "TIENDA",
-        status: "ACCEPTED",
-        montoAdelanto: { not: null },
-        saldoPaymentMethod: "EFECTIVO",
-        createdAt: { lte: retiroTiendaAt },
-        saldoCobradoEn: { gt: retiroTiendaAt },
-      } : { id: { equals: "" } },
-      _sum: { total: true, montoAdelanto: true },
-    }),
-    prisma.saleDocument.aggregate({
-      where: {
-        location: "ALMACEN",
-        paymentMethod: "EFECTIVO",
-        status: { notIn: ["VOIDED", "VOID_PENDING", "PARTIAL"] },
-        ...(retiroAlmacenAt ? { createdAt: { gt: retiroAlmacenAt } } : {}),
-      },
-      _sum: { total: true },
-      _count: { id: true },
-    }),
-    prisma.saleDocument.aggregate({
-      where: {
-        location: "ALMACEN",
-        paymentMethod: "EFECTIVO",
-        status: "PARTIAL",
-        ...(retiroAlmacenAt ? { createdAt: { gt: retiroAlmacenAt } } : {}),
-      },
-      _sum: { montoAdelanto: true },
-      _count: { id: true },
-    }),
-    prisma.saleDocument.aggregate({
-      where: {
-        location: "ALMACEN",
-        paymentMethod: "MIXTO",
-        status: { notIn: ["VOIDED", "VOID_PENDING"] },
-        ...(retiroAlmacenAt ? { createdAt: { gt: retiroAlmacenAt } } : {}),
-      },
-      _sum: { montoEfectivo: true },
-    }),
-    prisma.saleDocument.aggregate({
-      where: retiroAlmacenAt ? {
-        location: "ALMACEN",
-        status: "ACCEPTED",
-        montoAdelanto: { not: null },
-        saldoPaymentMethod: "EFECTIVO",
-        createdAt: { lte: retiroAlmacenAt },
-        saldoCobradoEn: { gt: retiroAlmacenAt },
-      } : { id: { equals: "" } },
-      _sum: { total: true, montoAdelanto: true },
+    calcularEfectivoDisponible({
+      location: "ALMACEN",
+      retiroAt: configAlmacen?.lastRetiroAt ?? null,
+      fondoAnterior: Number(configAlmacen?.lastRetiroFondo ?? 0),
     }),
     prisma.cajaRetiro.findMany({
       where: { createdAt: { gte: hoyInicio }, location: "TIENDA" },
@@ -118,19 +45,10 @@ export async function GET() {
     }),
   ]);
 
-  const tiendaEfectivoVentas = Number(tEfectivo._sum.total ?? 0)
-                             + Number(tEfectivoPartial._sum.montoAdelanto ?? 0)
-                             + Number(tMixtoEfectivo._sum.montoEfectivo ?? 0)
-                             + Number(tSaldosPostRetiro._sum.total ?? 0)
-                             - Number(tSaldosPostRetiro._sum.montoAdelanto ?? 0);
-  const tiendaCount = tEfectivo._count.id + tEfectivoPartial._count.id;
-
-  const almacenEfectivoVentas = Number(aEfectivo._sum.total ?? 0)
-                              + Number(aEfectivoPartial._sum.montoAdelanto ?? 0)
-                              + Number(aMixtoEfectivo._sum.montoEfectivo ?? 0)
-                              + Number(aSaldosPostRetiro._sum.total ?? 0)
-                              - Number(aSaldosPostRetiro._sum.montoAdelanto ?? 0);
-  const almacenCount = aEfectivo._count.id + aEfectivoPartial._count.id;
+  const tiendaEfectivoVentas = tiendaCash.efectivoVentas;
+  const tiendaCount = tiendaCash.countVentasEfectivo;
+  const almacenEfectivoVentas = almacenCash.efectivoVentas;
+  const almacenCount = almacenCash.countVentasEfectivo;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapRetiro = (r: any) => ({

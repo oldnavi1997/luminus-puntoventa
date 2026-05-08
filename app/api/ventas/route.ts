@@ -125,6 +125,18 @@ export async function POST(req: NextRequest) {
   const isNotaVenta = data.docType === "NOTA_VENTA";
   const esAdelanto = data.esAdelanto && isNotaVenta;
 
+  // Validar que la sesión exista, esté abierta y pertenezca al usuario
+  const sess = await prisma.posSession.findUnique({
+    where: { id: data.posSessionId },
+    select: { userId: true, status: true },
+  });
+  if (!sess || sess.status !== "OPEN") {
+    return NextResponse.json({ error: "La sesión de caja no está abierta" }, { status: 422 });
+  }
+  if (sess.userId !== session.user.id) {
+    return NextResponse.json({ error: "La sesión de caja no pertenece a este usuario" }, { status: 403 });
+  }
+
   // Solo ADMIN puede descontar del almacén
   const stockSource = session.user.role === "ADMIN" ? data.stockSource : "TIENDA";
 

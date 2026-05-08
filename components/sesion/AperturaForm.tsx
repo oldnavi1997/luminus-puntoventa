@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DollarSign, PlayCircle, ArrowDownCircle, CheckCircle } from "lucide-react";
+import { DollarSign, PlayCircle, ArrowDownCircle, CheckCircle, AlertTriangle, X } from "lucide-react";
 import { formatPEN } from "@/lib/utils";
 
 interface AperturaFormProps {
@@ -19,16 +19,20 @@ export function AperturaForm({ cashierName, suggestedBalance, isAdmin = false }:
   const [loadingRetiro, setLoadingRetiro] = useState(false);
   const [error, setError] = useState("");
   const [retiroGuardado, setRetiroGuardado] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const montoActual = parseFloat(balance) || 0;
+  const diferencia = suggestedBalance != null ? montoActual - suggestedBalance : 0;
+  const requiereConfirmacion = isAdmin && suggestedBalance != null && Math.abs(diferencia) > 0.01;
+
+  async function abrirCaja() {
     setLoading(true);
     setError("");
 
     const res = await fetch("/api/sesion", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ openingBalance: parseFloat(balance) || 0 }),
+      body: JSON.stringify({ openingBalance: montoActual }),
     });
 
     const json = await res.json();
@@ -36,11 +40,21 @@ export function AperturaForm({ cashierName, suggestedBalance, isAdmin = false }:
 
     if (!res.ok) {
       setError(json.error ?? "Error al abrir caja");
+      setShowConfirm(false);
       return;
     }
 
     router.push("/pos");
     router.refresh();
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (requiereConfirmacion) {
+      setShowConfirm(true);
+      return;
+    }
+    await abrirCaja();
   }
 
   async function handleGuardarRetiro() {
@@ -62,7 +76,6 @@ export function AperturaForm({ cashierName, suggestedBalance, isAdmin = false }:
     }
   }
 
-  const montoActual = parseFloat(balance) || 0;
   const montoRetirado = suggestedBalance ? Math.max(0, suggestedBalance - montoActual) : 0;
 
   return (
@@ -169,6 +182,69 @@ export function AperturaForm({ cashierName, suggestedBalance, isAdmin = false }:
           )}
         </button>
       </form>
+
+      {showConfirm && suggestedBalance != null && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-sm border border-border animate-scale-in">
+            <div className="flex items-center px-5 py-4 border-b border-border">
+              <AlertTriangle size={18} className="text-warning mr-2" />
+              <h3 className="font-semibold text-text text-[15px]">Confirmar apertura</h3>
+              <button
+                type="button"
+                onClick={() => setShowConfirm(false)}
+                className="ml-auto text-text-muted hover:text-text transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <p className="text-[13px] text-text-muted">
+                El monto que vas a registrar difiere del sugerido. Verifica el efectivo físico antes de confirmar.
+              </p>
+
+              <div className="bg-surface-light border border-border rounded-xl px-4 py-3 space-y-2">
+                <div className="flex justify-between text-[13px]">
+                  <span className="text-text-muted">Monto sugerido</span>
+                  <span className="font-mono text-text">{formatPEN(suggestedBalance)}</span>
+                </div>
+                <div className="flex justify-between text-[13px]">
+                  <span className="text-text-muted">Vas a registrar</span>
+                  <span className="font-mono font-bold text-text">{formatPEN(montoActual)}</span>
+                </div>
+                <div className={`flex justify-between text-[13px] border-t border-border pt-2 ${diferencia > 0 ? "text-warning" : "text-danger"}`}>
+                  <span className="font-medium">Diferencia</span>
+                  <span className="font-mono font-bold">
+                    {diferencia > 0 ? "+ " : "- "}{formatPEN(Math.abs(diferencia))}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm(false)}
+                  className="flex-1 bg-surface-light hover:bg-border rounded-xl py-3 text-[13px] text-text transition-colors border border-border"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={abrirCaja}
+                  disabled={loading}
+                  className="flex-1 bg-accent hover:bg-accent-dark disabled:opacity-50 rounded-xl py-3 text-[13px] font-semibold text-white transition-colors flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>Confirmar apertura</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { AperturaForm } from "@/components/sesion/AperturaForm";
 import { CierreResumen } from "@/components/sesion/CierreResumen";
 import { prisma } from "@/lib/prisma";
+import { calcularEfectivoDisponible } from "@/lib/cash-flow";
 
 export const dynamic = "force-dynamic";
 
@@ -27,54 +28,12 @@ export default async function SesionPage() {
     if (config?.nextOpeningOverride != null) {
       suggestedBalance = Number(config.nextOpeningOverride);
     } else {
-      const retiroAt = config?.lastRetiroAt ?? null;
-      const fondoAnterior = Number(config?.lastRetiroFondo ?? 0);
-      const [ventasCompletas, ventasPartial, ventasMixto, saldosPostRetiro] = await Promise.all([
-        prisma.saleDocument.aggregate({
-          where: {
-            location: "TIENDA",
-            paymentMethod: "EFECTIVO",
-            status: { notIn: ["VOIDED", "VOID_PENDING", "PARTIAL"] },
-            ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
-          },
-          _sum: { total: true },
-        }),
-        prisma.saleDocument.aggregate({
-          where: {
-            location: "TIENDA",
-            paymentMethod: "EFECTIVO",
-            status: "PARTIAL",
-            ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
-          },
-          _sum: { montoAdelanto: true },
-        }),
-        prisma.saleDocument.aggregate({
-          where: {
-            location: "TIENDA",
-            paymentMethod: "MIXTO",
-            status: { notIn: ["VOIDED", "VOID_PENDING"] },
-            ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
-          },
-          _sum: { montoEfectivo: true },
-        }),
-        prisma.saleDocument.aggregate({
-          where: retiroAt ? {
-            location: "TIENDA",
-            status: "ACCEPTED",
-            montoAdelanto: { not: null },
-            saldoPaymentMethod: "EFECTIVO",
-            createdAt: { lte: retiroAt },
-            saldoCobradoEn: { gt: retiroAt },
-          } : { id: { equals: "" } },
-          _sum: { total: true, montoAdelanto: true },
-        }),
-      ]);
-      const efectivoVentas = Number(ventasCompletas._sum.total ?? 0)
-                           + Number(ventasPartial._sum.montoAdelanto ?? 0)
-                           + Number(ventasMixto._sum.montoEfectivo ?? 0)
-                           + Number(saldosPostRetiro._sum.total ?? 0)
-                           - Number(saldosPostRetiro._sum.montoAdelanto ?? 0);
-      suggestedBalance = fondoAnterior + efectivoVentas;
+      const { efectivoDisponible } = await calcularEfectivoDisponible({
+        location: "TIENDA",
+        retiroAt: config?.lastRetiroAt ?? null,
+        fondoAnterior: Number(config?.lastRetiroFondo ?? 0),
+      });
+      suggestedBalance = efectivoDisponible;
     }
   }
 

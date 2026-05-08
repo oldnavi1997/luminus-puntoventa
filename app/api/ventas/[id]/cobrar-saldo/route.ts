@@ -35,6 +35,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (!doc) throw new Error("Documento no encontrado");
       if (doc.status !== DocumentStatus.PARTIAL) throw new Error("El documento no está pendiente de saldo");
 
+      // Validar que la sesión exista, esté abierta y pertenezca al usuario
+      const sess = await tx.posSession.findUnique({
+        where: { id: data.posSessionId },
+        select: { userId: true, status: true },
+      });
+      if (!sess || sess.status !== "OPEN") throw new Error("La sesión de caja no está abierta");
+      if (sess.userId !== session.user.id) throw new Error("La sesión de caja no pertenece a este usuario");
+
       const total   = Number(doc.total);
       const adelanto = Number(doc.montoAdelanto ?? 0);
       const saldo   = Math.round((total - adelanto) * 100) / 100;

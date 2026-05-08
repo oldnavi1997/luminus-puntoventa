@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { calcularEfectivoDisponible } from "@/lib/cash-flow";
 
 const Schema = z.object({
   montoQueQueda: z.number().min(0),
@@ -25,58 +26,12 @@ export async function POST(req: NextRequest) {
   const now = new Date();
 
   const config = await prisma.cajaConfig.findUnique({ where: { id: configId } });
-  const retiroAt = config?.lastRetiroAt ?? null;
-  const fondoAnterior = Number(config?.lastRetiroFondo ?? 0);
 
-  // Calcular efectivo: ventas completas + adelantos PARTIAL + porción efectivo de MIXTO
-  // + saldos cobrados en efectivo sobre documentos creados antes del último retiro
-  const [ventasCompletas, ventasPartial, ventasMixto, saldosPostRetiro] = await Promise.all([
-    prisma.saleDocument.aggregate({
-      where: {
-        location,
-        paymentMethod: "EFECTIVO",
-        status: { notIn: ["VOIDED", "VOID_PENDING", "PARTIAL"] },
-        ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
-      },
-      _sum: { total: true },
-    }),
-    prisma.saleDocument.aggregate({
-      where: {
-        location,
-        paymentMethod: "EFECTIVO",
-        status: "PARTIAL",
-        ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
-      },
-      _sum: { montoAdelanto: true },
-    }),
-    prisma.saleDocument.aggregate({
-      where: {
-        location,
-        paymentMethod: "MIXTO",
-        status: { notIn: ["VOIDED", "VOID_PENDING"] },
-        ...(retiroAt ? { createdAt: { gt: retiroAt } } : {}),
-      },
-      _sum: { montoEfectivo: true },
-    }),
-    prisma.saleDocument.aggregate({
-      where: retiroAt ? {
-        location,
-        status: "ACCEPTED",
-        montoAdelanto: { not: null },
-        saldoPaymentMethod: "EFECTIVO",
-        createdAt: { lte: retiroAt },
-        saldoCobradoEn: { gt: retiroAt },
-      } : { id: { equals: "" } },
-      _sum: { total: true, montoAdelanto: true },
-    }),
-  ]);
-
-  const efectivoVentas = Number(ventasCompletas._sum.total ?? 0)
-                       + Number(ventasPartial._sum.montoAdelanto ?? 0)
-                       + Number(ventasMixto._sum.montoEfectivo ?? 0)
-                       + Number(saldosPostRetiro._sum.total ?? 0)
-                       - Number(saldosPostRetiro._sum.montoAdelanto ?? 0);
-  const efectivoDisponible = fondoAnterior + efectivoVentas;
+  const { efectivoDisponible } = await calcularEfectivoDisponible({
+    location,
+    retiroAt: config?.lastRetiroAt ?? null,
+    fondoAnterior: Number(config?.lastRetiroFondo ?? 0),
+  });
   const montoRetirado = Math.max(0, efectivoDisponible - montoQueQueda);
 
   await prisma.$transaction(async (tx) => {
