@@ -273,6 +273,9 @@ model SaleDocument {
   saldoCobradoPor      User?          @relation("DocumentSaldoCobrador", fields: [saldoCobradoPorId], references: [id])
   saldoCobradoEn       DateTime?
   saldoPaymentMethod   PaymentMethod?
+  saldoMontoEfectivo   Decimal?       @db.Decimal(10, 2)
+  saldoMontoTarjeta    Decimal?       @db.Decimal(10, 2)
+  saldoMontoYape       Decimal?       @db.Decimal(10, 2)
   buyerPhone     String?
   prescription   Json?
   status         DocumentStatus @default(DRAFT)

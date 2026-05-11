@@ -15,6 +15,7 @@ export interface CashFlowResult {
  *  - Venta EFECTIVO sin adelanto, ACCEPTED, creada después del retiro: suma `total`.
  *  - Venta EFECTIVO con adelanto (PARTIAL o ACCEPTED), creada después del retiro: suma `montoAdelanto`.
  *  - Cualquier venta con saldo cobrado en EFECTIVO después del retiro: suma `total - montoAdelanto`.
+ *  - Cualquier venta con saldo cobrado en MIXTO después del retiro: suma `saldoMontoEfectivo`.
  *  - Venta MIXTO no anulada, creada después del retiro: suma `montoEfectivo`.
  *  - Excluye estados VOIDED y VOID_PENDING.
  */
@@ -31,6 +32,7 @@ export async function calcularEfectivoDisponible(opts: {
     ventasEfectivoConAdelanto,
     ventasMixto,
     saldosCobradosEnEfectivo,
+    saldosCobradosEnMixto,
   ] = await Promise.all([
     prisma.saleDocument.aggregate({
       where: {
@@ -72,6 +74,15 @@ export async function calcularEfectivoDisponible(opts: {
       },
       _sum: { total: true, montoAdelanto: true },
     }),
+    prisma.saleDocument.aggregate({
+      where: {
+        location,
+        status: "ACCEPTED",
+        saldoPaymentMethod: "MIXTO",
+        ...(retiroAt ? { saldoCobradoEn: { gt: retiroAt } } : {}),
+      },
+      _sum: { saldoMontoEfectivo: true },
+    }),
   ]);
 
   const efectivoVentas =
@@ -79,7 +90,8 @@ export async function calcularEfectivoDisponible(opts: {
     Number(ventasEfectivoConAdelanto._sum.montoAdelanto ?? 0) +
     Number(ventasMixto._sum.montoEfectivo ?? 0) +
     Number(saldosCobradosEnEfectivo._sum.total ?? 0) -
-    Number(saldosCobradosEnEfectivo._sum.montoAdelanto ?? 0);
+    Number(saldosCobradosEnEfectivo._sum.montoAdelanto ?? 0) +
+    Number(saldosCobradosEnMixto._sum.saldoMontoEfectivo ?? 0);
 
   const countVentasEfectivo =
     ventasEfectivoSinAdelanto._count.id + ventasEfectivoConAdelanto._count.id;

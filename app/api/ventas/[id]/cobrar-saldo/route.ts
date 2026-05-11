@@ -68,6 +68,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           saldoCobradoPorId:  session.user.id,
           saldoCobradoEn:     new Date(),
           saldoPaymentMethod: data.paymentMethod,
+          saldoMontoEfectivo: data.paymentMethod === "MIXTO" ? (data.montoEfectivo || null) : null,
+          saldoMontoTarjeta:  data.paymentMethod === "MIXTO" ? (data.montoTarjeta  || null) : null,
+          saldoMontoYape:     data.paymentMethod === "MIXTO" ? (data.montoYape     || null) : null,
         },
       });
 
