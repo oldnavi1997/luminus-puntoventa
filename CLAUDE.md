@@ -22,6 +22,17 @@ This POS project **shares its Postgres database** with the ecommerce project at 
 
 **When the ecommerce schema changes:** sync here (`npm run sync:schema`), commit the updated `prisma/schema.prisma`, push. Railway deploys ecommerce first (it runs `prisma migrate deploy`), then POS just regenerates the client.
 
+### If the user asks to add/modify/drop a table from THIS project
+
+You cannot do schema work from this repo. The full procedure lives in `D:\Cursor\luminus\CLAUDE.md` under "Workflow for schema changes". Summary of what you must do instead:
+
+1. Tell the user the schema change must originate in `D:\Cursor\luminus` (canonical schema owner).
+2. Switch to that directory: edit `prisma/schema.prisma`, run `npx prisma migrate dev --name <descriptor>`, build to verify.
+3. Come back here: `npm run sync:schema && npx prisma generate`, then implement the feature.
+4. Commit + push ecommerce FIRST, then POS. Railway must run the ecommerce `prisma migrate deploy` before the POS service tries to query the new column/table.
+
+Never edit `prisma/schema.prisma` here directly, never run `prisma migrate`/`db push` from this repo — both break the contract and the second one will drop ecommerce tables.
+
 ## Commands
 
 ```bash
