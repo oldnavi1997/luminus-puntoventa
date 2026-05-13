@@ -2,4 +2,9 @@
 buildCommand = "npm ci && npx prisma generate && npm run build"
 
 [deploy]
-startCommand = "npx prisma db push --accept-data-loss && npx tsx prisma/seed-catalog.ts && npm start"
+# IMPORTANT: This project shares its Postgres DB with luminus (ecommerce).
+# All schema migrations are owned by the ecommerce service. POS must NEVER run
+# `prisma db push` or `prisma migrate` against the shared DB — doing so will
+# drop the ecommerce tables. If catalog seed data is needed, run it as a
+# one-off Railway job, not on every deploy.
+startCommand = "npm start"

@@ -6,17 +6,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Luminus POS** is a Point of Sale system for an optical/eyeglasses retail store in Peru. It handles sales (BOLETA, FACTURA, NOTA_VENTA), inventory, cash register sessions, optical lens pricing, and electronic invoicing via SUNAT. It shares a PostgreSQL database with the Luminus ecommerce site.
 
+## Critical: Schema is owned by the ecommerce repo
+
+This POS project **shares its Postgres database** with the ecommerce project at `D:\Cursor\luminus`. The canonical `prisma/schema.prisma` lives there. This repo carries a synced copy — never edit `prisma/schema.prisma` here directly.
+
+**Hard rules:**
+- **NEVER** run `prisma db push`, `prisma migrate dev`, or `prisma migrate deploy` from this project. They will drop ecommerce tables (already happened once; recovered via Railway backup).
+- **NEVER** add schema-modifying commands to `railway.toml` `startCommand`. It must stay as `npm start`.
+- All schema changes originate in `D:\Cursor\luminus`. Bring them here via the sync flow below.
+
+**Sync flow:**
+- `npm run sync:schema` copies `../luminus/prisma/schema.prisma` into this repo.
+- `npm run verify:schema` fails if the two files drift. Falls back to a presence check when the canonical repo is not accessible (e.g. Railway build).
+- Hooks: `predev` runs `sync:schema` + `prisma generate`; `prebuild` runs `verify:schema` + `prisma generate`.
+
+**When the ecommerce schema changes:** sync here (`npm run sync:schema`), commit the updated `prisma/schema.prisma`, push. Railway deploys ecommerce first (it runs `prisma migrate deploy`), then POS just regenerates the client.
+
 ## Commands
 
 ```bash
-npm run dev        # Start dev server with Turbopack on port 3003
-npm run build      # npx prisma generate && next build
-npm start          # Production server
-npm run lint       # ESLint
+npm run dev          # Auto-syncs schema, generates client, starts dev server on :3003
+npm run build        # Verifies schema, generates client, builds
+npm run sync:schema  # Pull canonical schema from ecommerce repo
+npm run verify:schema# Fail if local schema differs from canonical
+npm start            # Production server
+npm run lint         # ESLint
 
-# Database
-npx prisma generate              # Regenerate Prisma client after schema changes
-npx prisma db push               # Sync schema to DB (dev)
+# Seeds (data only — no schema operations)
 npx tsx prisma/seed.ts           # Seed users and roles
 npx tsx prisma/seed-catalog.ts   # Seed lens catalog
 ```
@@ -86,11 +102,13 @@ Dev database: `postgresql://postgres:75207666@localhost:5433/luminus` (shared wi
 
 ## Deployment (Railway)
 
-`railway.toml` configures the full lifecycle:
+`railway.toml`:
 1. Build: `npm ci && npx prisma generate && npm run build`
-2. Deploy: `npx prisma db push --accept-data-loss && npx tsx prisma/seed-catalog.ts && npm start`
+2. Deploy: `npm start`
 
-The `--accept-data-loss` flag is intentional for Railway auto-migrations. Lens catalog is re-seeded on every deploy (idempotent).
+**No schema operations on Railway from this service.** The ecommerce service owns migrations via its own `prisma migrate deploy` startCommand.
+
+Catalog seeds are NOT auto-run on each deploy anymore — run `npx tsx prisma/seed-catalog.ts` manually as a Railway one-off job if `lens_catalog` ever needs reseeding.
 
 ## Key Design Decisions
 

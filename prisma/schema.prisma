@@ -7,12 +7,11 @@ datasource db {
   provider = "postgresql"
 }
 
-// ─── Enums compartidos con Luminus ────────────────────────────────────────────
-
 enum Role {
   USER
   ADMIN
   CASHIER
+  SUPERVISOR
 }
 
 enum PaymentStatus {
@@ -32,8 +31,6 @@ enum OrderStatus {
   CANCELLED
   REFUNDED
 }
-
-// ─── Enums POS ────────────────────────────────────────────────────────────────
 
 enum DocumentType {
   BOLETA
@@ -63,23 +60,21 @@ enum SessionStatus {
   CLOSED
 }
 
-// ─── Modelos compartidos con Luminus (no modificar estructura) ────────────────
-
 model User {
-  id            String       @id @default(cuid())
-  email         String       @unique
-  name          String?
-  password      String?
-  role          Role         @default(USER)
-  emailVerified DateTime?
-  image         String?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  orders          Order[]
-  posSessions     PosSession[]
-  documents       SaleDocument[] @relation("DocumentCashier")
-  saldosCobrados  SaleDocument[] @relation("DocumentSaldoCobrador")
-  retiros         CajaRetiro[]
+  id             String         @id @default(cuid())
+  email          String         @unique
+  name           String?
+  password       String?
+  role           Role           @default(USER)
+  emailVerified  DateTime?
+  image          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  orders         Order[]
+  posSessions    PosSession[]
+  documents      SaleDocument[] @relation("DocumentCashier")
+  saldosCobrados SaleDocument[] @relation("DocumentSaldoCobrador")
+  retiros        CajaRetiro[]
 }
 
 model Category {
@@ -106,6 +101,8 @@ model Product {
   price             Decimal               @db.Decimal(10, 2)
   comparePrice      Decimal?              @db.Decimal(10, 2)
   stock             Int                   @default(0)
+  stockAlmacen      Int                   @default(0)
+  stockTienda       Int                   @default(0)
   images            String[]
   brand             String?
   frameType         String?
@@ -120,8 +117,6 @@ model Product {
   dimTempleLength   String?
   sku               String?
   storePrice        Decimal?              @db.Decimal(10, 2)
-  stockTienda       Int                   @default(0)
-  stockAlmacen      Int                   @default(0)
   trackInventory    Boolean               @default(true)
   featured          Boolean               @default(false)
   active            Boolean               @default(true)
@@ -158,6 +153,9 @@ model Order {
   shippingProvince String
   shippingPostal   String
   shippingCountry  String        @default("Perú")
+  shippingCourier  String?
+  documentType     String?
+  documentNumber   String?
   subtotal         Decimal       @db.Decimal(10, 2)
   shippingCost     Decimal       @db.Decimal(10, 2) @default(0)
   discount         Decimal       @db.Decimal(10, 2) @default(0)
@@ -190,21 +188,21 @@ model OrderItem {
   prescription    Json?
 }
 
-// ─── Modelos POS nuevos ───────────────────────────────────────────────────────
+// ─── POS models (shared schema; owned by ecommerce, consumed by luminus-puntoventa) ───
 
 model PosSession {
-  id             String        @id @default(cuid())
+  id             String         @id @default(cuid())
   userId         String
-  user           User          @relation(fields: [userId], references: [id])
-  status         SessionStatus @default(OPEN)
-  openingBalance Decimal       @db.Decimal(10, 2) @default(0)
-  closingBalance Decimal?      @db.Decimal(10, 2)
-  totalEfectivo  Decimal       @db.Decimal(10, 2) @default(0)
-  totalTarjeta   Decimal       @db.Decimal(10, 2) @default(0)
-  totalYape      Decimal       @db.Decimal(10, 2) @default(0)
-  totalVentas    Decimal       @db.Decimal(10, 2) @default(0)
-  countVentas    Int           @default(0)
-  openedAt       DateTime      @default(now())
+  user           User           @relation(fields: [userId], references: [id])
+  status         SessionStatus  @default(OPEN)
+  openingBalance Decimal        @default(0) @db.Decimal(10, 2)
+  closingBalance Decimal?       @db.Decimal(10, 2)
+  totalEfectivo  Decimal        @default(0) @db.Decimal(10, 2)
+  totalTarjeta   Decimal        @default(0) @db.Decimal(10, 2)
+  totalYape      Decimal        @default(0) @db.Decimal(10, 2)
+  totalVentas    Decimal        @default(0) @db.Decimal(10, 2)
+  countVentas    Int            @default(0)
+  openedAt       DateTime       @default(now())
   closedAt       DateTime?
   notes          String?
   documents      SaleDocument[]
@@ -241,60 +239,60 @@ model DocumentSerie {
 }
 
 model SaleDocument {
-  id             String         @id @default(cuid())
-  type           DocumentType
-  serie          String
-  correlativo    Int
-  fullNumber     String         @unique
-  posSessionId   String?
-  posSession     PosSession?    @relation(fields: [posSessionId], references: [id])
-  cashierId      String
-  cashier        User           @relation("DocumentCashier", fields: [cashierId], references: [id])
-  customerId     String?
-  customer       Customer?      @relation(fields: [customerId], references: [id])
-  buyerDocType   String?
-  buyerDocNumber String?
-  buyerName      String?
-  buyerAddress   String?
-  subtotal       Decimal        @db.Decimal(10, 2)
-  igv            Decimal        @db.Decimal(10, 2)
-  total          Decimal        @db.Decimal(10, 2)
-  discount       Decimal        @db.Decimal(10, 2) @default(0)
-  paymentMethod  PaymentMethod
-  montoRecibido  Decimal?       @db.Decimal(10, 2)
-  cambio         Decimal?       @db.Decimal(10, 2)
-  montoAdelanto        Decimal?       @db.Decimal(10, 2)
-  montoEfectivo        Decimal?       @db.Decimal(10, 2)
-  montoTarjeta         Decimal?       @db.Decimal(10, 2)
-  montoYape            Decimal?       @db.Decimal(10, 2)
-  location             String         @default("TIENDA")
-  notes                String?
-  saldoCobradoPorId    String?
-  saldoCobradoPor      User?          @relation("DocumentSaldoCobrador", fields: [saldoCobradoPorId], references: [id])
-  saldoCobradoEn       DateTime?
-  saldoPaymentMethod   PaymentMethod?
-  saldoMontoEfectivo   Decimal?       @db.Decimal(10, 2)
-  saldoMontoTarjeta    Decimal?       @db.Decimal(10, 2)
-  saldoMontoYape       Decimal?       @db.Decimal(10, 2)
-  buyerPhone     String?
-  prescription   Json?
-  status         DocumentStatus @default(DRAFT)
-  nubefactId     String?
-  nubefactResponse Json?
-  pdfUrl         String?
-  xmlUrl         String?
-  qrCode         String?
-  sunatCdrCode   String?
-  sunatCdrDesc   String?
-  voidReason     String?
-  voidedAt       DateTime?
-  voidCdrCode    String?
-  retryCount     Int            @default(0)
-  lastRetryAt    DateTime?
-  submittedAt    DateTime?
-  items          SaleDocumentItem[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id                  String             @id @default(cuid())
+  type                DocumentType
+  serie               String
+  correlativo         Int
+  fullNumber          String             @unique
+  posSessionId        String?
+  posSession          PosSession?        @relation(fields: [posSessionId], references: [id])
+  cashierId           String
+  cashier             User               @relation("DocumentCashier", fields: [cashierId], references: [id])
+  customerId          String?
+  customer            Customer?          @relation(fields: [customerId], references: [id])
+  buyerDocType        String?
+  buyerDocNumber      String?
+  buyerName           String?
+  buyerAddress        String?
+  subtotal            Decimal            @db.Decimal(10, 2)
+  igv                 Decimal            @db.Decimal(10, 2)
+  total               Decimal            @db.Decimal(10, 2)
+  discount            Decimal            @default(0) @db.Decimal(10, 2)
+  paymentMethod       PaymentMethod
+  montoRecibido       Decimal?           @db.Decimal(10, 2)
+  cambio              Decimal?           @db.Decimal(10, 2)
+  montoAdelanto       Decimal?           @db.Decimal(10, 2)
+  montoEfectivo       Decimal?           @db.Decimal(10, 2)
+  montoTarjeta        Decimal?           @db.Decimal(10, 2)
+  montoYape           Decimal?           @db.Decimal(10, 2)
+  location            String             @default("TIENDA")
+  notes               String?
+  saldoCobradoPorId   String?
+  saldoCobradoPor     User?              @relation("DocumentSaldoCobrador", fields: [saldoCobradoPorId], references: [id])
+  saldoCobradoEn      DateTime?
+  saldoPaymentMethod  PaymentMethod?
+  saldoMontoEfectivo  Decimal?           @db.Decimal(10, 2)
+  saldoMontoTarjeta   Decimal?           @db.Decimal(10, 2)
+  saldoMontoYape      Decimal?           @db.Decimal(10, 2)
+  buyerPhone          String?
+  prescription        Json?
+  status              DocumentStatus     @default(DRAFT)
+  nubefactId          String?
+  nubefactResponse    Json?
+  pdfUrl              String?
+  xmlUrl              String?
+  qrCode              String?
+  sunatCdrCode        String?
+  sunatCdrDesc        String?
+  voidReason          String?
+  voidedAt            DateTime?
+  voidCdrCode         String?
+  retryCount          Int                @default(0)
+  lastRetryAt         DateTime?
+  submittedAt         DateTime?
+  items               SaleDocumentItem[]
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
   @@index([type, serie, correlativo])
   @@index([status])
@@ -332,13 +330,13 @@ model CajaConfig {
 }
 
 model CajaRetiro {
-  id           String   @id @default(cuid())
-  montoRetirado Decimal @db.Decimal(10, 2)
-  fondoQueQueda Decimal @db.Decimal(10, 2)
-  location     String   @default("TIENDA")
+  id            String   @id @default(cuid())
+  montoRetirado Decimal  @db.Decimal(10, 2)
+  fondoQueQueda Decimal  @db.Decimal(10, 2)
+  location      String   @default("TIENDA")
   registradoBy  String
-  registradoPor User    @relation(fields: [registradoBy], references: [id])
-  createdAt    DateTime @default(now())
+  registradoPor User     @relation(fields: [registradoBy], references: [id])
+  createdAt     DateTime @default(now())
 
   @@index([createdAt])
 }
@@ -351,8 +349,6 @@ model DocumentQueue {
   nextRetryAt DateTime @default(now())
   createdAt   DateTime @default(now())
 }
-
-// ─── Calculador de Lunas ──────────────────────────────────────────────────────
 
 model LensCatalog {
   id        String   @id @default(uuid()) @db.Uuid
