@@ -547,13 +547,16 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
       {showReceipt && saleResult && (
         <Receipt
           document={{ ...saleResult, montoAdelanto: saleResult.montoAdelanto ?? null }}
-          items={saleItems.map((i) => ({
-            description: i.name,
-            quantity: i.quantity,
-            unitPrice: i.price,
-            lineTotal: (i.price + (i.lensPrice ?? 0)) * i.quantity,
-            sku: i.sku ?? null,
-          }))}
+          items={saleItems.map((i) => {
+            const unit = (i.editedPrice ?? i.price) + (i.lensPrice ?? 0);
+            return {
+              description: i.name,
+              quantity: i.quantity,
+              unitPrice: unit,
+              lineTotal: unit * i.quantity,
+              sku: i.sku ?? null,
+            };
+          })}
           buyerName={saleCustomer?.name}
           buyerDoc={saleCustomer ? `${saleCustomer.docType} ${saleCustomer.docNumber}` : undefined}
           paymentMethod={method}
