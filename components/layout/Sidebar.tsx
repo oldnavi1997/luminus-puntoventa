@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
   ShoppingCart, Package, FileText, BarChart2,
-  Clock, Settings, LogOut, History, Timer, DollarSign, ArrowRightLeft, Eye,
+  Clock, Settings, LogOut, History, Timer, DollarSign, ArrowRightLeft, Eye, Boxes,
 } from "lucide-react";
 
 interface SidebarUser {
@@ -18,6 +18,7 @@ interface SidebarUser {
 const MAIN_NAV = [
   { href: "/pos",          label: "Punto de Venta",  icon: ShoppingCart, shortcut: "F1", roles: null },
   { href: "/inventario",   label: "Inventario",      icon: Package,      shortcut: "F2", roles: ["ADMIN"] },
+  { href: "/movimientos",  label: "Movimientos",     icon: Boxes,        shortcut: "F10", roles: ["ADMIN"] },
   { href: "/comprobantes", label: "Comprobantes",        icon: FileText,        shortcut: "F3", roles: null },
   { href: "/convertir",    label: "Convertir NV",        icon: ArrowRightLeft,  shortcut: "F4", roles: null },
   { href: "/dashboard",    label: "Dashboard",           icon: BarChart2,       shortcut: "F5", roles: ["ADMIN"] },
