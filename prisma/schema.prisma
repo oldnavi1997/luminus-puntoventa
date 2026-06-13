@@ -391,3 +391,26 @@ model TarifaLuna {
 
   @@map("tarifas_luna")
 }
+
+model BioProfile {
+  id           String   @id @default("main")
+  handle       String   @default("@luminus.eyewear")
+  avatarUrl    String?
+  tagline      String?
+  instagramUrl String?
+  tiktokUrl    String?
+  updatedAt    DateTime @updatedAt
+}
+
+model BioLink {
+  id        String   @id @default(cuid())
+  label     String
+  url       String
+  icon      String?
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+}

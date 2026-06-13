@@ -13,7 +13,13 @@ export async function PATCH(
   const { id } = await params;
   const body = await req.json();
 
-  const { name, sku, brand, storePrice, stock, stockTienda, stockAlmacen, trackInventory, active } = body;
+  const { name, sku, brand, price, storePrice, stock, stockTienda, stockAlmacen, trackInventory, active } = body;
+
+  const skuTrim = sku?.trim();
+  if (skuTrim) {
+    const dup = await prisma.product.findFirst({ where: { sku: skuTrim, NOT: { id } } });
+    if (dup) return NextResponse.json({ error: "Ya existe un producto con ese SKU" }, { status: 409 });
+  }
 
   const product = await prisma.product.update({
     where: { id },
@@ -21,7 +27,8 @@ export async function PATCH(
       ...(name         !== undefined && { name }),
       ...(sku          !== undefined && { sku: sku || null }),
       ...(brand        !== undefined && { brand: brand || null }),
-      ...(storePrice   !== undefined && { storePrice: storePrice !== "" ? Number(storePrice) : null }),
+      ...(price        !== undefined && { price: Number(price) }),
+      ...(storePrice   !== undefined && { storePrice: storePrice !== "" && storePrice !== null ? Number(storePrice) : null }),
       ...(stock        !== undefined && { stock: Number(stock) }),
       ...(stockTienda  !== undefined && { stockTienda: Number(stockTienda) }),
       ...(stockAlmacen !== undefined && { stockAlmacen: Number(stockAlmacen) }),
@@ -30,7 +37,13 @@ export async function PATCH(
     },
   });
 
-  return NextResponse.json({ product: { ...product, price: Number(product.price) } });
+  return NextResponse.json({
+    product: {
+      ...product,
+      price:      Number(product.price),
+      storePrice: product.storePrice != null ? Number(product.storePrice) : null,
+    },
+  });
 }
 
 export async function DELETE(

@@ -13,6 +13,12 @@ export async function POST(req: NextRequest) {
 
   if (!name?.trim()) return NextResponse.json({ error: "Nombre requerido" }, { status: 400 });
 
+  const skuTrim = sku?.trim() || null;
+  if (skuTrim) {
+    const dup = await prisma.product.findFirst({ where: { sku: skuTrim } });
+    if (dup) return NextResponse.json({ error: "Ya existe un producto con ese SKU" }, { status: 409 });
+  }
+
   const base   = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const suffix = Math.random().toString(36).slice(2, 7);
   const slug   = `${base}-${suffix}`;
@@ -25,7 +31,7 @@ export async function POST(req: NextRequest) {
     data: {
       name:           name.trim(),
       slug,
-      sku:            sku?.trim()   || null,
+      sku:            skuTrim,
       brand:          brand?.trim() || null,
       price:          price ? Number(price) : 0,
       storePrice:     storePrice ? Number(storePrice) : null,

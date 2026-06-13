@@ -1,5 +1,5 @@
 const BASE_URL =
-  process.env.APISUNAT_BASE_URL ?? "https://sandbox.apisunat.pe/api/v3/documents";
+  process.env.APISUNAT_BASE_URL ?? "https://app.apisunat.pe/api/v3/documents";
 
 const TOKEN = process.env.APISUNAT_TOKEN!;
 
