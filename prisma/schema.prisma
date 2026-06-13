@@ -75,6 +75,7 @@ model User {
   documents      SaleDocument[] @relation("DocumentCashier")
   saldosCobrados SaleDocument[] @relation("DocumentSaldoCobrador")
   retiros        CajaRetiro[]
+  movimientosStock StockMovimiento[]
 }
 
 model Category {
@@ -126,6 +127,7 @@ model Product {
   colorVariants     ProductColorVariant[] @relation("ProductVariants")
   isVariantOf       ProductColorVariant[] @relation("ProductIsVariantOf")
   saleItems         SaleDocumentItem[]
+  movimientos       StockMovimiento[]
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 }
@@ -413,4 +415,25 @@ model BioLink {
   updatedAt DateTime @updatedAt
 
   @@index([active, sortOrder])
+}
+
+enum TipoMovimientoStock {
+  INGRESO // nuevo stock al almacén
+  TRASLADO // almacén → tienda
+}
+
+model StockMovimiento {
+  id                     String              @id @default(cuid())
+  productId              String
+  product                Product             @relation(fields: [productId], references: [id])
+  tipo                   TipoMovimientoStock
+  cantidad               Int
+  stockAlmacenResultante Int
+  stockTiendaResultante  Int
+  userId                 String
+  user                   User                @relation(fields: [userId], references: [id])
+  nota                   String?
+  createdAt              DateTime            @default(now())
+
+  @@index([productId, createdAt])
 }

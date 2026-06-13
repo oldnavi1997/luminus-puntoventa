@@ -58,9 +58,42 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
+  const [movTipo, setMovTipo] = useState<"INGRESO" | "TRASLADO" | null>(null);
+  const [movQty, setMovQty] = useState("");
+  const [movLoading, setMovLoading] = useState(false);
 
   const set = (k: string, v: string | boolean) =>
     setForm((f) => ({ ...f, [k]: v }));
+
+  async function handleMovimiento() {
+    if (!movTipo) return;
+    const cantidad = Number(movQty);
+    if (!Number.isInteger(cantidad) || cantidad <= 0) {
+      setError("La cantidad debe ser un entero mayor a 0");
+      return;
+    }
+    if (movTipo === "TRASLADO" && cantidad > product.stockAlmacen) {
+      setError(`Solo hay ${product.stockAlmacen} en almacén`);
+      return;
+    }
+    setMovLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/productos/${product.id}/movimiento`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo: movTipo, cantidad }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Error al registrar el movimiento");
+      onSaved(json.product);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo registrar el movimiento.");
+    } finally {
+      setMovLoading(false);
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -226,6 +259,62 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
                   {(Number(form.stockTienda) || 0) + (Number(form.stockAlmacen) || 0)}
                 </span>
               </div>
+            </div>
+          )}
+
+          {/* Movimientos de stock */}
+          {form.trackInventory && (
+            <div className="border border-border rounded-lg p-3 space-y-2.5">
+              <p className="text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium">Movimientos de stock</p>
+              {movTipo === null ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => { setMovTipo("INGRESO"); setMovQty(""); setError(""); }}
+                    className="px-3 py-2 text-[12.5px] font-medium text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors"
+                  >
+                    📥 Ingreso a almacén
+                  </button>
+                  <button
+                    onClick={() => { setMovTipo("TRASLADO"); setMovQty(""); setError(""); }}
+                    disabled={product.stockAlmacen <= 0}
+                    className="px-3 py-2 text-[12.5px] font-medium text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors disabled:opacity-40"
+                  >
+                    🔄 Trasladar a tienda
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[11.5px] text-ink-3">
+                    {movTipo === "INGRESO"
+                      ? "Sumar unidades nuevas al almacén."
+                      : `Mover de almacén a tienda · disponible en almacén: ${product.stockAlmacen}`}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      autoFocus
+                      className="flex-1 bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink font-mono focus:outline-none focus:border-accent"
+                      value={movQty}
+                      onChange={(e) => setMovQty(e.target.value)}
+                      placeholder="Cantidad"
+                    />
+                    <button
+                      onClick={() => { setMovTipo(null); setMovQty(""); setError(""); }}
+                      className="px-3 py-2 text-[12.5px] text-ink-3 hover:text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleMovimiento}
+                      disabled={movLoading}
+                      className="px-4 py-2 text-[12.5px] font-medium bg-accent text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors"
+                    >
+                      {movLoading ? "Guardando…" : "Confirmar"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
