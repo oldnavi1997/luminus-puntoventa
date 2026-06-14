@@ -7,13 +7,16 @@ export async function GET(_req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  // Día actual en hora de Perú (UTC-5), igual que el endpoint de ventas.
+  // En Railway el servidor corre en UTC, así que calcular con setHours() local
+  // dejaba fuera las ventas del día peruano. Lima no tiene horario de verano.
+  const limaDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const today = new Date(`${limaDate}T00:00:00-05:00`);
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
 
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
+  // Hora de Lima de una fecha (UTC-5 fijo)
+  const limaHour = (dt: Date | string) => (new Date(dt).getUTCHours() + 24 - 5) % 24;
 
   const [todayDocs, yesterdayDocs, lowStock] = await Promise.all([
     prisma.saleDocument.findMany({
@@ -81,7 +84,7 @@ export async function GET(_req: NextRequest) {
   // Hourly buckets (08-21)
   const hourly = Array.from({ length: 14 }, (_, i) => {
     const h = 8 + i;
-    const bucket = todayDocs.filter((d) => new Date(d.createdAt).getHours() === h);
+    const bucket = todayDocs.filter((d) => limaHour(d.createdAt) === h);
     return {
       hour: `${String(h).padStart(2, "0")}`,
       total: bucket.reduce((s, d) => s + montoEfectivo(d), 0),
