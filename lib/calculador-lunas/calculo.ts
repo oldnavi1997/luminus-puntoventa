@@ -10,11 +10,11 @@ export const TARIFAS_DEFAULT: TarifaLunaRow[] = [
   { id:  4, esfMin: 0.00, esfMax: 2.00, cilMin: 5.00, cilMax: 5.99, poli: 67.5, foto: 75.0 },
   { id:  5, esfMin: 0.00, esfMax: 2.00, cilMin: 6.00, cilMax: 6.99, poli: 67.5, foto: 75.0 },
   // Esfera 2.25 – 3.99
-  { id:  6, esfMin: 2.25, esfMax: 3.00, cilMin: 0.00, cilMax: 2.00, poli: 57.5, foto: 60.0 },
+  { id:  6, esfMin: 2.25, esfMax: 3.99, cilMin: 0.00, cilMax: 2.00, poli: 57.5, foto: 60.0 },
   { id:  7, esfMin: 2.25, esfMax: 3.99, cilMin: 2.25, cilMax: 3.99, poli: 57.5, foto: 65.0 },
   { id:  8, esfMin: 2.25, esfMax: 3.99, cilMin: 4.00, cilMax: 4.99, poli: 62.5, foto: 65.0 },
-  { id:  9, esfMin: 3.00, esfMax: 3.99, cilMin: 5.00, cilMax: 5.99, poli: 67.5, foto: 70.0 },
-  { id: 10, esfMin: 3.00, esfMax: 3.99, cilMin: 6.00, cilMax: 6.99, poli: 67.5, foto: 70.0 },
+  { id:  9, esfMin: 2.25, esfMax: 3.99, cilMin: 5.00, cilMax: 5.99, poli: 67.5, foto: 70.0 },
+  { id: 10, esfMin: 2.25, esfMax: 3.99, cilMin: 6.00, cilMax: 6.99, poli: 67.5, foto: 70.0 },
   // Esfera 4.00 – 4.99
   { id: 11, esfMin: 4.00, esfMax: 4.99, cilMin: 0.00, cilMax: 2.00, poli: 67.5, foto: 70.0 },
   { id: 12, esfMin: 4.00, esfMax: 4.99, cilMin: 2.25, cilMax: 3.99, poli: 67.5, foto: 70.0 },
