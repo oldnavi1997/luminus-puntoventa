@@ -59,7 +59,7 @@ export function calcularDesglose(
 ): Desglose {
   const hasOD = odSphere !== "" && odSphere !== "—";
   const hasOI = oiSphere !== "" && oiSphere !== "—";
-  if (!hasOD && !hasOI) return { totalPoli: 0, totalFoto: 0, hasValues: false };
+  if (!hasOD && !hasOI) return { totalNk: 0, totalPoli: 0, totalFoto: 0, hasValues: false };
 
   const parse = (v: string) => Math.abs(parseFloat(v) || 0);
 
@@ -69,8 +69,11 @@ export function calcularDesglose(
     return (pOD + pOI) * 2;
   };
 
+  const totalPoli = calcTotal("policarbonato");
+
   return {
-    totalPoli: calcTotal("policarbonato"),
+    totalNk: Math.max(0, totalPoli - 50),
+    totalPoli,
     totalFoto: calcTotal("fotocromatico"),
     hasValues: true,
   };

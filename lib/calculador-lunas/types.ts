@@ -33,6 +33,7 @@ export interface TarifaLunaRow {
 }
 
 export interface Desglose {
+  totalNk: number;
   totalPoli: number;
   totalFoto: number;
   hasValues: boolean;
