@@ -125,6 +125,7 @@ Catalog seeds are NOT auto-run on each deploy anymore — run `npx tsx prisma/se
 
 - **Tailwind v4** with the new `@theme` syntax — no `tailwind.config.ts` theme extension needed; CSS variables are defined in `globals.css`.
 - **Payment methods**: EFECTIVO, TARJETA, YAPE, MIXTO. Mixed payments split the total across methods; `SaleDocument` stores individual amounts per method.
-- **Stock locations**: Products track `stockTienda` (showroom) and `stockAlmacen` (warehouse) separately. Sales deduct from `stockTienda`.
+- **Stock locations**: Products track `stockTienda` (showroom) and `stockAlmacen` (warehouse) separately. Sales deduct from `stockTienda`. `stock` is the total (tienda + almacén), so only `INGRESO` moves it — transfers just relocate units already counted.
+- **Stock movements**: `TipoMovimientoStock` is INGRESO (new stock into the warehouse), TRASLADO (almacén → tienda) and RETORNO (tienda → almacén). The column matrix lives only in `lib/stock-movimiento.ts` (`dataDe`, `whereConStock`) — routes send a tipo and a quantity, never a column. The stock check rides inside the update's `where`, so two concurrent movements can't drive a product negative (there is no `CHECK >= 0` in the DB); a failed match surfaces as P2025 → 409. Every movement writes a `StockMovimiento` row with the resulting balances, listed by `GET /api/productos/movimientos`.
 - **Document series**: Each `DocumentType` + series letter has its own `DocumentSerie` row with an auto-incrementing correlativo. Never set manually—always use the DB sequence.
 - **Timezone**: All dates use Lima/Peru timezone (`America/Lima`, UTC-5). Use `toLocaleString('es-PE', { timeZone: 'America/Lima' })` for display.

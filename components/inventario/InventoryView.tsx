@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Search, Plus, Package, ChevronLeft, ChevronRight, X, Trash2 } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
+import { ORIGEN_DE, ORIGEN_LABEL, type TipoMovimiento } from "@/lib/stock-movimiento";
 
 interface Product {
   id: string;
@@ -58,7 +59,7 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
-  const [movTipo, setMovTipo] = useState<"INGRESO" | "TRASLADO" | null>(null);
+  const [movTipo, setMovTipo] = useState<TipoMovimiento | null>(null);
   const [movQty, setMovQty] = useState("");
   const [movLoading, setMovLoading] = useState(false);
 
@@ -72,8 +73,9 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
       setError("La cantidad debe ser un entero mayor a 0");
       return;
     }
-    if (movTipo === "TRASLADO" && cantidad > product.stockAlmacen) {
-      setError(`Solo hay ${product.stockAlmacen} en almacén`);
+    const origen = ORIGEN_DE[movTipo];
+    if (origen && cantidad > product[origen]) {
+      setError(`Solo hay ${product[origen]} en ${ORIGEN_LABEL[origen]}`);
       return;
     }
     setMovLoading(true);
@@ -267,19 +269,29 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
             <div className="border border-border rounded-lg p-3 space-y-2.5">
               <p className="text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium">Movimientos de stock</p>
               {movTipo === null ? (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => { setMovTipo("INGRESO"); setMovQty(""); setError(""); }}
+                    title="Sumar unidades nuevas al almacén"
                     className="px-3 py-2 text-[12.5px] font-medium text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors"
                   >
-                    📥 Ingreso a almacén
+                    📥 Ingreso
                   </button>
                   <button
                     onClick={() => { setMovTipo("TRASLADO"); setMovQty(""); setError(""); }}
                     disabled={product.stockAlmacen <= 0}
+                    title="Mover de almacén a tienda"
                     className="px-3 py-2 text-[12.5px] font-medium text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors disabled:opacity-40"
                   >
-                    🔄 Trasladar a tienda
+                    🔄 A tienda
+                  </button>
+                  <button
+                    onClick={() => { setMovTipo("RETORNO"); setMovQty(""); setError(""); }}
+                    disabled={product.stockTienda <= 0}
+                    title="Devolver de tienda a almacén"
+                    className="px-3 py-2 text-[12.5px] font-medium text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors disabled:opacity-40"
+                  >
+                    ↩️ A almacén
                   </button>
                 </div>
               ) : (
@@ -287,7 +299,9 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
                   <p className="text-[11.5px] text-ink-3">
                     {movTipo === "INGRESO"
                       ? "Sumar unidades nuevas al almacén."
-                      : `Mover de almacén a tienda · disponible en almacén: ${product.stockAlmacen}`}
+                      : movTipo === "TRASLADO"
+                        ? `Mover de almacén a tienda · disponible en almacén: ${product.stockAlmacen}`
+                        : `Devolver de tienda a almacén · disponible en tienda: ${product.stockTienda}`}
                   </p>
                   <div className="flex items-center gap-2">
                     <input

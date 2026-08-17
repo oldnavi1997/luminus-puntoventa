@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  esTipoMovimiento,
+  dataDe,
+  whereConStock,
+  ORIGEN_DE,
+  ORIGEN_LABEL,
+} from "@/lib/stock-movimiento";
 
 export async function POST(
   req: NextRequest,
@@ -15,7 +22,7 @@ export async function POST(
   const body = await req.json();
   const { tipo, cantidad, nota } = body;
 
-  if (tipo !== "INGRESO" && tipo !== "TRASLADO") {
+  if (!esTipoMovimiento(tipo)) {
     return NextResponse.json({ error: "Tipo de movimiento inválido" }, { status: 400 });
   }
   const cant = Number(cantidad);
@@ -23,22 +30,38 @@ export async function POST(
     return NextResponse.json({ error: "La cantidad debe ser un entero mayor a 0" }, { status: 400 });
   }
 
+  const origen = ORIGEN_DE[tipo];
+
   try {
     const result = await prisma.$transaction(async (tx) => {
       const product = await tx.product.findUnique({ where: { id } });
       if (!product) throw { status: 404, message: "Producto no encontrado" };
       if (!product.trackInventory) throw { status: 400, message: "Este producto no controla inventario" };
 
-      if (tipo === "TRASLADO" && product.stockAlmacen < cant) {
-        throw { status: 422, message: `Stock insuficiente en almacén (disponible: ${product.stockAlmacen})` };
+      if (origen && product[origen] < cant) {
+        throw {
+          status: 422,
+          message: `Stock insuficiente en ${ORIGEN_LABEL[origen]} (disponible: ${product[origen]})`,
+        };
       }
 
-      const updated = await tx.product.update({
-        where: { id },
-        data: tipo === "INGRESO"
-          ? { stockAlmacen: { increment: cant }, stock: { increment: cant } }
-          : { stockAlmacen: { decrement: cant }, stockTienda: { increment: cant } },
-      });
+      let updated;
+      try {
+        // La condición de stock viaja dentro del where (ver lib/stock-movimiento):
+        // el chequeo de arriba da el mensaje lindo, este evita el negativo.
+        updated = await tx.product.update({
+          where: whereConStock(id, tipo, cant),
+          data: dataDe(tipo, cant),
+        });
+      } catch (e: any) {
+        if (e?.code === "P2025" && origen) {
+          throw {
+            status: 409,
+            message: "Otro movimiento tomó el stock mientras se registraba este. Volvé a intentar.",
+          };
+        }
+        throw e;
+      }
 
       await tx.stockMovimiento.create({
         data: {
