@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { consultarDNI, consultarRUC } from "@/lib/apisunat";
+import { resolverDocumento } from "@/lib/consulta-documento";
 
 const CustomerSchema = z.object({
   docType: z.string().default("DNI"),
@@ -23,50 +23,8 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get("q");
 
   if (docNumber) {
-    const existing = await prisma.customer.findFirst({ where: { docNumber } });
-    if (existing) return NextResponse.json({ customer: existing });
-
-    const isDNI = /^\d{8}$/.test(docNumber);
-    const isRUC = /^\d{11}$/.test(docNumber);
-
-    if (!isDNI && !isRUC) return NextResponse.json({ customer: null });
-
-    let sunatData: { docType: string; docNumber: string; name: string; address?: string } | null = null;
-
-    if (isDNI) {
-      const data = await consultarDNI(docNumber);
-      if (data) {
-        const name = [data.apellido_paterno, data.apellido_materno, data.nombres]
-          .filter(Boolean)
-          .join(" ");
-        if (name) sunatData = { docType: "DNI", docNumber: data.dni ?? docNumber, name };
-      }
-    } else {
-      const data = await consultarRUC(docNumber);
-      if (data) {
-        const name = data.razon_social ?? data.nombre_comercial;
-        if (name)
-          sunatData = {
-            docType: "RUC",
-            docNumber: data.ruc ?? docNumber,
-            name,
-            address: data.direccion,
-          };
-      }
-    }
-
-    if (!sunatData) return NextResponse.json({ customer: null });
-
-    try {
-      const saved = await prisma.customer.upsert({
-        where: { docType_docNumber: { docType: sunatData.docType, docNumber: sunatData.docNumber } },
-        create: sunatData,
-        update: { name: sunatData.name, address: sunatData.address ?? null },
-      });
-      return NextResponse.json({ customer: saved });
-    } catch {
-      return NextResponse.json({ customer: sunatData });
-    }
+    const customer = await resolverDocumento(docNumber);
+    return NextResponse.json({ customer });
   }
 
   if (q) {

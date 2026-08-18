@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
     include: {
       cashier: { select: { name: true } },
       saldoCobradoPor: { select: { name: true } },
+      order: { select: { documentNumber: true, shippingName: true } },
       items: {
         include: { product: { select: { sku: true } } },
       },
@@ -45,6 +46,14 @@ export async function GET(req: NextRequest) {
     discount: Number(d.discount),
     buyerName: d.buyerName,
     buyerPhone: d.buyerPhone ?? null,
+    buyerDocType: d.buyerDocType ?? null,
+    buyerDocNumber: d.buyerDocNumber ?? null,
+    buyerResolvedAt: d.buyerResolvedAt ? d.buyerResolvedAt.toISOString() : null,
+    channel: d.channel,
+    // Lo que el cliente escribio al comprar: el punto de retorno del boton "revertir".
+    webOriginal: d.order
+      ? { docNumber: d.order.documentNumber, name: d.order.shippingName }
+      : null,
     montoAdelanto: d.montoAdelanto ? Number(d.montoAdelanto) : null,
     location: d.location,
     notes: d.notes ?? null,

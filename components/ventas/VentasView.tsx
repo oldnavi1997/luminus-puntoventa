@@ -3,11 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ChevronDown, ChevronRight, Receipt as ReceiptIcon, X, Trash2, Pencil, Phone, User, Printer } from "lucide-react";
+import { ChevronDown, ChevronRight, Receipt as ReceiptIcon, X, Trash2, Pencil, Phone, User, Printer, Search, Undo2, IdCard } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
 import { Receipt } from "@/components/pos/Receipt";
 import type { PrescriptionData } from "@/types";
+import { TIPOS_DOCUMENTO, tieneDocumento, validarDocumento } from "@/lib/documento";
 
 interface SaleItem {
   description: string;
@@ -29,6 +30,12 @@ interface Sale {
   discount: number;
   buyerName: string | null;
   buyerPhone?: string | null;
+  buyerDocType?: string | null;
+  buyerDocNumber?: string | null;
+  buyerResolvedAt?: string | null;
+  channel?: string;
+  /** Lo que el cliente escribio al comprar en la web; null si la venta es de mostrador. */
+  webOriginal?: { docNumber: string | null; name: string } | null;
   montoAdelanto?: number | null;
   notes?: string | null;
   location: string;
@@ -96,14 +103,50 @@ export function VentasView() {
   const [deleteDoc, setDeleteDoc]   = useState<Sale | null>(null);
   const [editingDoc, setEditingDoc] = useState<Sale | null>(null);
   const [printDoc,  setPrintDoc]    = useState<Sale | null>(null);
+  const [resolviendo, setResolviendo] = useState(0);
 
   function fetchDocs(d: string, all = false) {
     setLoading(true);
     const url = all ? "/api/ventas?all=true" : `/api/ventas?date=${d}`;
     fetch(url)
       .then((r) => r.json())
-      .then((data) => { setDocs(data.docs ?? []); setStats(data.stats); setLoading(false); })
+      .then((data) => {
+        const docs: Sale[] = data.docs ?? [];
+        setDocs(docs);
+        setStats(data.stats);
+        setLoading(false);
+        resolverPendientes(docs);
+      })
       .catch(() => setLoading(false));
+  }
+
+  /**
+   * Las ventas web traen el DNI que el cliente puso al comprar, pero el nombre
+   * del destinatario del envio. Se consultan en lote al cargar; la lista ya esta
+   * pintada, asi que los nombres se actualizan solos cuando responde.
+   */
+  async function resolverPendientes(docs: Sale[]) {
+    const ids = docs.filter((d) => d.channel === "WEB" && !d.buyerResolvedAt).map((d) => d.id);
+    if (ids.length === 0) return;
+
+    setResolviendo(ids.length);
+    try {
+      const res = await fetch("/api/ventas/resolver-dni", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: ids.slice(0, 60) }),
+      });
+      if (!res.ok) return;
+      const { resueltos } = await res.json();
+      for (const r of resueltos ?? []) {
+        const { id, ...datos } = r;
+        updateDoc(id, datos);
+      }
+    } catch {
+      // Un fallo del proveedor no debe romper el Historial: se reintenta al recargar.
+    } finally {
+      setResolviendo(0);
+    }
   }
 
   useEffect(() => { fetchDocs(date, allHistory); }, [date, allHistory]);
@@ -195,6 +238,11 @@ export function VentasView() {
                 ))}
               </div>
             )}
+            {resolviendo > 0 && (
+              <span className="text-[11.5px] text-ink-4 animate-pulse">
+                resolviendo {resolviendo} documento{resolviendo !== 1 ? "s" : ""}...
+              </span>
+            )}
             <span className="text-[12.5px] text-ink-3 ml-auto">{filteredDocs.length} ventas</span>
           </div>
 
@@ -262,6 +310,11 @@ export function VentasView() {
                         </td>
                         <td className="px-4 py-3 border-b border-border">
                           <p className="text-[12.5px] text-ink-3">{doc.buyerName ?? "—"}</p>
+                          {tieneDocumento(doc.buyerDocNumber) && (
+                            <p className="text-[11px] text-ink-4 font-mono">
+                              {doc.buyerDocType ?? "DNI"} {doc.buyerDocNumber}
+                            </p>
+                          )}
                           {doc.buyerPhone && (
                             <p className="text-[11px] text-ink-4 font-mono">{doc.buyerPhone}</p>
                           )}
@@ -398,14 +451,20 @@ export function VentasView() {
                             </table>
 
                             {/* Datos adicionales del cliente */}
-                            {(doc.buyerPhone || doc.prescription) && (
+                            {(doc.buyerPhone || doc.prescription || tieneDocumento(doc.buyerDocNumber)) && (
                               <div className="mt-3 pt-3 border-t border-border space-y-2">
-                                {(doc.buyerName || doc.buyerPhone) && (
+                                {(doc.buyerName || doc.buyerPhone || tieneDocumento(doc.buyerDocNumber)) && (
                                   <div className="flex gap-4">
                                     {doc.buyerName && (
                                       <div className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
                                         <User size={11} className="text-ink-4" />
                                         <span>{doc.buyerName}</span>
+                                      </div>
+                                    )}
+                                    {tieneDocumento(doc.buyerDocNumber) && (
+                                      <div className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
+                                        <IdCard size={11} className="text-ink-4" />
+                                        <span className="font-mono">{doc.buyerDocType ?? "DNI"} {doc.buyerDocNumber}</span>
                                       </div>
                                     )}
                                     {doc.buyerPhone && (
@@ -480,6 +539,12 @@ export function VentasView() {
             sku: i.sku,
           }))}
           buyerName={printDoc.buyerName ?? undefined}
+          buyerDoc={
+            tieneDocumento(printDoc.buyerDocNumber)
+              ? `${printDoc.buyerDocType ?? "DNI"} ${printDoc.buyerDocNumber}`
+              : undefined
+          }
+          fecha={printDoc.createdAt}
           paymentMethod={printDoc.paymentMethod}
           cashierName={printDoc.cashier.name ?? undefined}
           onClose={() => setPrintDoc(null)}
@@ -567,6 +632,44 @@ function EditDatosModal({
 }) {
   const [name, setName]   = useState(doc.buyerName ?? "");
   const [phone, setPhone] = useState(doc.buyerPhone ?? "");
+  const [docType, setDocType] = useState(doc.buyerDocType ?? "DNI");
+  const [docNumber, setDocNumber] = useState(
+    tieneDocumento(doc.buyerDocNumber) ? doc.buyerDocNumber : ""
+  );
+  const [lookup, setLookup] = useState<"idle" | "loading" | "found" | "not_found">("idle");
+
+  // Una boleta o factura ya se emitio a SUNAT con ese documento.
+  const puedeEditarDoc = doc.type === "NOTA_VENTA";
+  const original = doc.webOriginal;
+
+  async function buscarDocumento() {
+    const n = docNumber.trim();
+    if (!n) return;
+    setLookup("loading");
+    try {
+      const res = await fetch(`/api/clientes?docNumber=${encodeURIComponent(n)}`);
+      const json = await res.json();
+      if (json.customer) {
+        setName(json.customer.name);
+        setDocType(json.customer.docType);
+        setDocNumber(json.customer.docNumber);
+        setLookup("found");
+      } else {
+        setLookup("not_found");
+      }
+    } catch {
+      setLookup("not_found");
+    }
+  }
+
+  /** Devuelve el formulario a lo que el cliente escribio al comprar en la web. */
+  function revertirAWeb() {
+    if (!original) return;
+    setName(original.name);
+    setDocNumber(original.docNumber ?? "");
+    setDocType("DNI");
+    setLookup("idle");
+  }
   const [notes, setNotes] = useState(doc.notes ?? "");
   const [hasRx, setHasRx] = useState(!!doc.prescription);
 
@@ -586,6 +689,12 @@ function EditDatosModal({
         ? { od, oi, ...(add ? { add } : {}), ...(pd ? { pd } : {}) }
         : null;
 
+      const docLimpio = docNumber.trim();
+      if (puedeEditarDoc && docLimpio) {
+        const motivo = validarDocumento(docType, docLimpio);
+        if (motivo) throw new Error(motivo);
+      }
+
       const res = await fetch(`/api/ventas/${doc.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -593,16 +702,22 @@ function EditDatosModal({
           buyerName:  name.trim() || undefined,
           buyerPhone: phone.trim() || undefined,
           notes:      notes.trim() || undefined,
+          ...(puedeEditarDoc && docLimpio
+            ? { buyerDocType: docType, buyerDocNumber: docLimpio }
+            : {}),
           prescription,
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Error al guardar");
       onUpdate({
-        buyerName:    json.buyerName,
-        buyerPhone:   json.buyerPhone,
-        notes:        json.notes,
-        prescription: json.prescription,
+        buyerName:       json.buyerName,
+        buyerPhone:      json.buyerPhone,
+        buyerDocType:    json.buyerDocType,
+        buyerDocNumber:  json.buyerDocNumber,
+        buyerResolvedAt: json.buyerResolvedAt,
+        notes:           json.notes,
+        prescription:    json.prescription,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al guardar");
@@ -636,6 +751,59 @@ function EditDatosModal({
                 placeholder="Nombre completo"
                 className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
               />
+            </div>
+            <div>
+              <label className="block text-[12px] text-ink-3 mb-1">Documento</label>
+              <div className="flex gap-2">
+                <select
+                  value={docType}
+                  onChange={(e) => { setDocType(e.target.value); setLookup("idle"); }}
+                  disabled={!puedeEditarDoc}
+                  className="bg-surface-light border border-border rounded-lg px-2 py-2 text-[13px] text-ink focus:outline-none focus:border-accent disabled:opacity-50"
+                >
+                  {TIPOS_DOCUMENTO.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <input
+                  value={docNumber}
+                  onChange={(e) => { setDocNumber(e.target.value); setLookup("idle"); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); buscarDocumento(); } }}
+                  disabled={!puedeEditarDoc}
+                  placeholder={docType === "RUC" ? "11 digitos" : docType === "DNI" ? "8 digitos" : "Numero"}
+                  className="flex-1 bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent font-mono disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={buscarDocumento}
+                  disabled={!puedeEditarDoc || lookup === "loading" || !docNumber.trim()}
+                  title="Buscar titular"
+                  className="px-3 rounded-lg border border-border text-ink-3 hover:text-ink hover:border-accent transition-colors disabled:opacity-40"
+                >
+                  <Search size={14} />
+                </button>
+              </div>
+              {!puedeEditarDoc && (
+                <p className="text-[11px] text-ink-4 mt-1.5">
+                  El comprobante ya se emitio a SUNAT con este documento, por eso no se puede cambiar.
+                </p>
+              )}
+              {puedeEditarDoc && lookup === "found" && (
+                <p className="text-[11px] text-success mt-1.5">Encontrado - nombre autocompletado</p>
+              )}
+              {puedeEditarDoc && lookup === "not_found" && (
+                <p className="text-[11px] text-warning mt-1.5">No encontrado - escribe el nombre a mano</p>
+              )}
+              {puedeEditarDoc && original && (
+                <button
+                  type="button"
+                  onClick={revertirAWeb}
+                  className="flex items-center gap-1.5 text-[11.5px] text-ink-3 hover:text-ink transition-colors mt-2"
+                >
+                  <Undo2 size={12} />
+                  Revertir a los datos de la web
+                </button>
+              )}
             </div>
             <div>
               <label className="block text-[12px] text-ink-3 mb-1">Celular</label>

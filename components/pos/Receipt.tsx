@@ -26,6 +26,8 @@ interface ReceiptProps {
   items: ReceiptItem[];
   buyerName?: string;
   buyerDoc?: string;
+  /** ISO de la venta. Sin esto el ticket reimpreso sale con la fecha de hoy. */
+  fecha?: string;
   paymentMethod?: string;
   montoRecibido?: number;
   cashierName?: string;
@@ -67,7 +69,7 @@ function numeroALetras(monto: number): string {
   return `${convertir(entero)} ${centavos.toString().padStart(2, "0")}/100 SOLES`;
 }
 
-export function Receipt({ document, items, buyerName, buyerDoc, paymentMethod, montoRecibido, cashierName, onClose }: ReceiptProps) {
+export function Receipt({ document, items, buyerName, buyerDoc, fecha: fechaVenta, paymentMethod, montoRecibido, cashierName, onClose }: ReceiptProps) {
   const esAdelanto = document.status === "PARTIAL" && document.montoAdelanto != null;
   const printRef = useRef<HTMLDivElement>(null);
   const handlePrint = useReactToPrint({
@@ -81,8 +83,9 @@ export function Receipt({ document, items, buyerName, buyerDoc, paymentMethod, m
   const total = document.total;
   const isNotaVenta = document.fullNumber.startsWith("NV");
   const isFactura = document.fullNumber.startsWith("F");
-  const fecha = new Date().toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" });
-  const hora = new Date().toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
+  const emitidoEn = fechaVenta ? new Date(fechaVenta) : new Date();
+  const fecha = emitidoEn.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Lima" });
+  const hora = emitidoEn.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", timeZone: "America/Lima" });
 
   const docTitle = isNotaVenta
     ? "NOTA DE VENTA"

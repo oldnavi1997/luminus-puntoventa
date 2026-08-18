@@ -4,10 +4,13 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/app/generated/prisma/client";
 import { z } from "zod";
+import { validarDocumento, TIPOS_DOCUMENTO } from "@/lib/documento";
 
 const PatchSchema = z.object({
   buyerName: z.string().min(1).optional(),
   buyerPhone: z.string().optional(),
+  buyerDocType: z.enum(TIPOS_DOCUMENTO).optional(),
+  buyerDocNumber: z.string().optional(),
   notes: z.string().optional(),
   prescription: z.object({
     od: z.object({ sphere: z.string(), cylinder: z.string(), axis: z.string() }),
@@ -34,11 +37,38 @@ export async function PATCH(
   const doc = await prisma.saleDocument.findUnique({ where: { id } });
   if (!doc) return NextResponse.json({ error: "Venta no encontrada" }, { status: 404 });
 
+  const tocaDocumento =
+    parsed.data.buyerDocType !== undefined || parsed.data.buyerDocNumber !== undefined;
+
+  if (tocaDocumento) {
+    // Una boleta o factura ya viajo a SUNAT con ese documento: cambiarlo aqui
+    // dejaria la base en desacuerdo con el comprobante oficial.
+    if (doc.type !== "NOTA_VENTA") {
+      return NextResponse.json(
+        { error: "No se puede cambiar el documento de una boleta o factura ya emitida a SUNAT" },
+        { status: 422 }
+      );
+    }
+    const docType = parsed.data.buyerDocType ?? doc.buyerDocType ?? "DNI";
+    const docNumber = parsed.data.buyerDocNumber ?? doc.buyerDocNumber ?? "";
+    const motivo = validarDocumento(docType, docNumber);
+    if (motivo) return NextResponse.json({ error: motivo }, { status: 400 });
+  }
+
+  // Cualquier edicion manual del comprador queda sellada para que el lote
+  // de resolucion automatica del Historial no la pise despues.
+  const tocaComprador = tocaDocumento || parsed.data.buyerName !== undefined;
+
   const updated = await prisma.saleDocument.update({
     where: { id },
     data: {
       ...(parsed.data.buyerName !== undefined && { buyerName: parsed.data.buyerName }),
       ...(parsed.data.buyerPhone !== undefined && { buyerPhone: parsed.data.buyerPhone }),
+      ...(parsed.data.buyerDocType !== undefined && { buyerDocType: parsed.data.buyerDocType }),
+      ...(parsed.data.buyerDocNumber !== undefined && {
+        buyerDocNumber: parsed.data.buyerDocNumber.trim(),
+      }),
+      ...(tocaComprador && { buyerResolvedAt: new Date() }),
       ...(parsed.data.notes !== undefined && { notes: parsed.data.notes || null }),
       ...(parsed.data.prescription !== undefined && {
         prescription: parsed.data.prescription === null ? Prisma.JsonNull : parsed.data.prescription,
@@ -47,10 +77,13 @@ export async function PATCH(
   });
 
   return NextResponse.json({
-    buyerName:    updated.buyerName,
-    buyerPhone:   updated.buyerPhone,
-    notes:        updated.notes,
-    prescription: updated.prescription,
+    buyerName:       updated.buyerName,
+    buyerPhone:      updated.buyerPhone,
+    buyerDocType:    updated.buyerDocType,
+    buyerDocNumber:  updated.buyerDocNumber,
+    buyerResolvedAt: updated.buyerResolvedAt ? updated.buyerResolvedAt.toISOString() : null,
+    notes:           updated.notes,
+    prescription:    updated.prescription,
   });
 }
 
