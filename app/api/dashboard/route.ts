@@ -73,6 +73,7 @@ export async function GET(_req: NextRequest) {
   // Por ubicación
   const tiendaDocs  = todayDocs.filter((d) => d.location === "TIENDA");
   const almacenDocs = todayDocs.filter((d) => d.location === "ALMACEN");
+  const webDocs     = todayDocs.filter((d) => d.location === "WEB");
 
   // Adelantos pendientes (PARTIAL)
   const partialDocs = todayDocs.filter((d) => d.status === "PARTIAL");
@@ -111,6 +112,7 @@ export async function GET(_req: NextRequest) {
     byLocation: {
       tienda:  { total: tiendaDocs.reduce((s, d) => s + montoEfectivo(d), 0), count: tiendaDocs.length },
       almacen: { total: almacenDocs.reduce((s, d) => s + montoEfectivo(d), 0), count: almacenDocs.length },
+      web:     { total: webDocs.reduce((s, d) => s + montoEfectivo(d), 0), count: webDocs.length },
     },
     adelantosPendientes: {
       count:         partialDocs.length,

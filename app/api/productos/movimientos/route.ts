@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import type { TipoMovimientoStock } from "@/app/generated/prisma/client";
 import {
   esTipoMovimiento,
+  esTipoMovimientoFiltro,
   dataDe,
   whereConStock,
   ORIGEN_DE,
@@ -27,11 +29,11 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(Number.isFinite(pedido) && pedido > 0 ? pedido : 100, 300);
 
   const where: {
-    tipo?: "INGRESO" | "TRASLADO" | "RETORNO";
+    tipo?: TipoMovimientoStock;
     productId?: string;
     createdAt?: { gte?: Date; lte?: Date };
   } = {};
-  if (esTipoMovimiento(tipo)) where.tipo = tipo;
+  if (esTipoMovimientoFiltro(tipo)) where.tipo = tipo;
   if (productId) where.productId = productId;
   if (from || to) {
     // Las fechas llegan sueltas (YYYY-MM-DD) desde un input date y se

@@ -54,6 +54,8 @@ const METHOD_LABEL: Record<string, string> = {
   MIXTO:    "Mixto",
 };
 
+const LOCATION_LABEL: Record<string, string> = { TIENDA: "Tienda", ALMACEN: "Almacén", WEB: "Web" };
+
 const STATUS_COLOR: Record<string, string> = {
   ACCEPTED:     "bg-success-soft text-success",
   PENDING:      "bg-warning-soft text-warning",
@@ -90,7 +92,7 @@ export function VentasView() {
   const [date, setDate]       = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }));
   const [allHistory, setAllHistory] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [locationFilter, setLocationFilter] = useState<"ALL" | "TIENDA" | "ALMACEN">("ALL");
+  const [locationFilter, setLocationFilter] = useState<"ALL" | "TIENDA" | "ALMACEN" | "WEB">("ALL");
   const [deleteDoc, setDeleteDoc]   = useState<Sale | null>(null);
   const [editingDoc, setEditingDoc] = useState<Sale | null>(null);
   const [printDoc,  setPrintDoc]    = useState<Sale | null>(null);
@@ -121,7 +123,8 @@ export function VentasView() {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const filteredDocs = locationFilter === "ALL" ? docs : docs.filter((d) => d.location === locationFilter);
   const hasAdelantos = filteredDocs.some((d) => d.montoAdelanto != null);
-  const hasMultipleLocations = docs.some((d) => d.location === "ALMACEN");
+  // El toggle sólo aparece si hay algo más que ventas de mostrador.
+  const hasMultipleLocations = docs.some((d) => d.location !== "TIENDA");
 
   return (
     <div className="flex flex-col h-full">
@@ -177,7 +180,7 @@ export function VentasView() {
             )}
             {hasMultipleLocations && (
               <div className="flex gap-1 bg-surface-light border border-border rounded-lg p-0.5">
-                {(["ALL", "TIENDA", "ALMACEN"] as const).map((loc) => (
+                {(["ALL", "TIENDA", "ALMACEN", "WEB"] as const).map((loc) => (
                   <button
                     key={loc}
                     onClick={() => setLocationFilter(loc)}
@@ -187,7 +190,7 @@ export function VentasView() {
                         : "text-ink-3 hover:text-ink"
                     }`}
                   >
-                    {loc === "ALL" ? "Todos" : loc === "TIENDA" ? "Tienda" : "Almacén"}
+                    {loc === "ALL" ? "Todos" : loc === "TIENDA" ? "Tienda" : loc === "ALMACEN" ? "Almacén" : "Web"}
                   </button>
                 ))}
               </div>
@@ -299,9 +302,11 @@ export function VentasView() {
                             <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
                               doc.location === "ALMACEN"
                                 ? "bg-violet-100 text-violet-700"
+                                : doc.location === "WEB"
+                                ? "bg-sky-100 text-sky-700"
                                 : "bg-surface-dark text-ink-3"
                             }`}>
-                              {doc.location === "ALMACEN" ? "Almacén" : "Tienda"}
+                              {LOCATION_LABEL[doc.location] ?? doc.location}
                             </span>
                           </td>
                         )}

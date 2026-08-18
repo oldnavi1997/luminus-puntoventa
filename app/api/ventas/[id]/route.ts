@@ -72,6 +72,16 @@ export async function DELETE(
   });
   if (!doc) return NextResponse.json({ error: "Venta no encontrada" }, { status: 404 });
 
+  // Una venta web salió de almacén y/o tienda según el desglose guardado en la
+  // orden; esta reversión no lo conoce y devolvería todo a tienda. El ecommerce
+  // es el único dueño de ese flujo.
+  if (doc.channel === "WEB") {
+    return NextResponse.json(
+      { error: "Las ventas web se anulan desde el panel del ecommerce (Pedidos → Cancelar)." },
+      { status: 422 }
+    );
+  }
+
   await prisma.$transaction(async (tx) => {
     // Restaurar stock
     for (const item of doc.items) {

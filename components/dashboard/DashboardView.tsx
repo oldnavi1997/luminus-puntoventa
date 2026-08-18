@@ -15,6 +15,7 @@ interface DashboardData {
   byLocation: {
     tienda:  { total: number; count: number };
     almacen: { total: number; count: number };
+    web:     { total: number; count: number };
   };
   adelantosPendientes: { count: number; montoRecibido: number; montoTotal: number };
   hourly: { hour: string; total: number }[];
@@ -57,7 +58,13 @@ export function DashboardView() {
   ];
   const totalMethods = methodRows.reduce((s, m) => s + m.amount, 0);
 
-  const hasAlmacen = data.byLocation.almacen.count > 0;
+  // Tienda siempre visible; almacén y web sólo si tuvieron movimiento hoy.
+  const ubicaciones = [
+    { label: "Tienda física", color: "bg-accent",  ...data.byLocation.tienda },
+    ...(data.byLocation.almacen.count > 0 ? [{ label: "Almacén", color: "bg-warning", ...data.byLocation.almacen }] : []),
+    ...(data.byLocation.web.count > 0 ? [{ label: "Ventas web", color: "bg-sky-500", ...data.byLocation.web }] : []),
+  ];
+  const totalUbicaciones = ubicaciones.reduce((sum, u) => sum + u.total, 0);
   const saldoPendiente = data.adelantosPendientes.montoTotal - data.adelantosPendientes.montoRecibido;
 
   return (
@@ -167,58 +174,29 @@ export function DashboardView() {
         </div>
 
         {/* ── Row 3: Ubicaciones ───────────────────────────────────────── */}
-        <div className={`grid gap-4 ${hasAlmacen ? "grid-cols-2" : "grid-cols-1"}`}>
-          {/* Tienda */}
-          <div className="bg-surface border border-border rounded-xl p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="text-[14px] font-semibold text-ink">Tienda física</h3>
-                <p className="text-[12px] text-ink-3">{data.byLocation.tienda.count} venta{data.byLocation.tienda.count !== 1 ? "s" : ""} hoy</p>
-              </div>
-              <div className="text-right">
-                <div className="text-[20px] font-bold font-mono text-ink">{formatPEN(data.byLocation.tienda.total)}</div>
-                <div className="text-[11px] text-ink-3">recaudado</div>
-              </div>
-            </div>
-            {data.byLocation.tienda.count > 0 && (
-              <div className="h-1.5 bg-surface-light rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-accent rounded-full"
-                  style={{
-                    width: `${data.byLocation.tienda.total + data.byLocation.almacen.total > 0
-                      ? (data.byLocation.tienda.total / (data.byLocation.tienda.total + data.byLocation.almacen.total)) * 100
-                      : 0}%`,
-                  }}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Almacén — solo si hay ventas */}
-          {hasAlmacen && (
-            <div className="bg-surface border border-border rounded-xl p-5">
+        <div className={`grid gap-4 ${ubicaciones.length === 1 ? "grid-cols-1" : ubicaciones.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+          {ubicaciones.map((u) => (
+            <div key={u.label} className="bg-surface border border-border rounded-xl p-5">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h3 className="text-[14px] font-semibold text-ink">Almacén</h3>
-                  <p className="text-[12px] text-ink-3">{data.byLocation.almacen.count} venta{data.byLocation.almacen.count !== 1 ? "s" : ""} hoy</p>
+                  <h3 className="text-[14px] font-semibold text-ink">{u.label}</h3>
+                  <p className="text-[12px] text-ink-3">{u.count} venta{u.count !== 1 ? "s" : ""} hoy</p>
                 </div>
                 <div className="text-right">
-                  <div className="text-[20px] font-bold font-mono text-ink">{formatPEN(data.byLocation.almacen.total)}</div>
+                  <div className="text-[20px] font-bold font-mono text-ink">{formatPEN(u.total)}</div>
                   <div className="text-[11px] text-ink-3">recaudado</div>
                 </div>
               </div>
-              <div className="h-1.5 bg-surface-light rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-warning rounded-full"
-                  style={{
-                    width: `${data.byLocation.tienda.total + data.byLocation.almacen.total > 0
-                      ? (data.byLocation.almacen.total / (data.byLocation.tienda.total + data.byLocation.almacen.total)) * 100
-                      : 0}%`,
-                  }}
-                />
-              </div>
+              {u.count > 0 && (
+                <div className="h-1.5 bg-surface-light rounded-full overflow-hidden">
+                  <div
+                    className={`h-full ${u.color} rounded-full`}
+                    style={{ width: `${totalUbicaciones > 0 ? (u.total / totalUbicaciones) * 100 : 0}%` }}
+                  />
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
 
         {/* ── Row 4: Low stock ─────────────────────────────────────────── */}

@@ -1,5 +1,6 @@
-import type { Prisma } from "@/app/generated/prisma/client";
+import type { Prisma, TipoMovimientoStock } from "@/app/generated/prisma/client";
 
+/** Tipos que un usuario crea desde el POS. Los *_WEB los origina el ecommerce. */
 export const TIPOS_MOVIMIENTO = ["INGRESO", "TRASLADO", "RETORNO"] as const;
 export type TipoMovimiento = (typeof TIPOS_MOVIMIENTO)[number];
 
@@ -7,10 +8,24 @@ export function esTipoMovimiento(v: unknown): v is TipoMovimiento {
   return typeof v === "string" && (TIPOS_MOVIMIENTO as readonly string[]).includes(v);
 }
 
-export const MOVIMIENTO_LABEL: Record<TipoMovimiento, string> = {
-  INGRESO:  "Ingreso a almacén",
-  TRASLADO: "Traslado a tienda",
-  RETORNO:  "Retorno a almacén",
+/** Todo el enum: sirve para filtrar el historial, que sí incluye los de la web. */
+export const TIPOS_MOVIMIENTO_FILTRO = [
+  ...TIPOS_MOVIMIENTO,
+  "VENTA_WEB",
+  "ANULACION_WEB",
+] as const satisfies readonly TipoMovimientoStock[];
+
+export function esTipoMovimientoFiltro(v: unknown): v is TipoMovimientoStock {
+  return typeof v === "string" && (TIPOS_MOVIMIENTO_FILTRO as readonly string[]).includes(v);
+}
+
+/** Cubre el enum completo: el historial muestra también lo que genera la web. */
+export const MOVIMIENTO_LABEL: Record<TipoMovimientoStock, string> = {
+  INGRESO:       "Ingreso a almacén",
+  TRASLADO:      "Traslado a tienda",
+  RETORNO:       "Retorno a almacén",
+  VENTA_WEB:     "Venta web",
+  ANULACION_WEB: "Anulación de venta web",
 };
 
 /** Columna de la que sale el stock. El INGRESO es mercadería nueva: no descuenta de ninguna. */

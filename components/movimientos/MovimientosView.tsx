@@ -5,11 +5,13 @@ import { Search, Plus, Minus, X, Package, Boxes, History } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import {
   TIPOS_MOVIMIENTO,
+  TIPOS_MOVIMIENTO_FILTRO,
   MOVIMIENTO_LABEL,
   ORIGEN_DE,
   disponible,
   type TipoMovimiento,
 } from "@/lib/stock-movimiento";
+import type { TipoMovimientoStock } from "@/app/generated/prisma/client";
 
 interface Product {
   id: string;
@@ -29,7 +31,8 @@ interface LineItem {
 
 interface Movimiento {
   id: string;
-  tipo: TipoMovimiento;
+  // El historial trae también los movimientos que origina el ecommerce.
+  tipo: TipoMovimientoStock;
   cantidad: number;
   stockTiendaResultante: number;
   stockAlmacenResultante: number;
@@ -45,10 +48,12 @@ const TIPO_TAB_LABEL: Record<TipoMovimiento, string> = {
   RETORNO:  "↩️ Retorno a almacén",
 };
 
-const TIPO_BADGE: Record<TipoMovimiento, string> = {
-  INGRESO:  "bg-accent-soft text-accent",
-  TRASLADO: "bg-success-soft text-success",
-  RETORNO:  "bg-warning/15 text-warning",
+const TIPO_BADGE: Record<TipoMovimientoStock, string> = {
+  INGRESO:       "bg-accent-soft text-accent",
+  TRASLADO:      "bg-success-soft text-success",
+  RETORNO:       "bg-warning/15 text-warning",
+  VENTA_WEB:     "bg-danger/15 text-danger",
+  ANULACION_WEB: "bg-ink-4/15 text-ink-3",
 };
 
 function fechaLima(iso: string) {
@@ -80,7 +85,7 @@ export function MovimientosView() {
   const [loadingHist, setLoadingHist] = useState(false);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [tipoFiltro, setTipoFiltro] = useState<TipoMovimiento | "">("");
+  const [tipoFiltro, setTipoFiltro] = useState<TipoMovimientoStock | "">("");
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 300);
@@ -366,11 +371,11 @@ export function MovimientosView() {
                 />
                 <select
                   value={tipoFiltro}
-                  onChange={(e) => setTipoFiltro(e.target.value as TipoMovimiento | "")}
+                  onChange={(e) => setTipoFiltro(e.target.value as TipoMovimientoStock | "")}
                   className="bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
                 >
                   <option value="">Todos los tipos</option>
-                  {TIPOS_MOVIMIENTO.map((t) => (
+                  {TIPOS_MOVIMIENTO_FILTRO.map((t) => (
                     <option key={t} value={t}>{MOVIMIENTO_LABEL[t]}</option>
                   ))}
                 </select>
