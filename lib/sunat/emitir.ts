@@ -300,9 +300,21 @@ export async function emitirComprobante(documentId: string): Promise<ResultadoEm
         ? err
         : new ErrorSunat("DESCONOCIDO", err instanceof Error ? err.message : String(err), {}, err);
 
-    // Un rechazo del validador es definitivo; un fallo de transporte no.
-    const estado = error.reintentable ? EstadoEnvioSunat.ERROR_ENVIO : EstadoEnvioSunat.RECHAZADO;
-    const estadoDocumento = estadoDocumentoPara(estado);
+    // Sólo el validador de SUNAT dicta un rechazo. Todo lo demás —credenciales
+    // mal puestas, certificado que no abre, red caída, sobre mal armado—
+    // significa que SUNAT no llegó a registrar nada, y entonces el comprobante
+    // se puede reemitir con el MISMO correlativo en cuanto se corrija.
+    //
+    // Marcar eso como REJECTED seria dar por quemado un numero que sigue vivo,
+    // y ademas mentiria: nadie evaluo el documento. Por eso va a SEND_ERROR,
+    // que es "hay algo que arreglar", y no a REJECTED.
+    const esRechazoDeSunat = error.codigo === "RECHAZADO";
+    const estado = esRechazoDeSunat ? EstadoEnvioSunat.RECHAZADO : EstadoEnvioSunat.ERROR_ENVIO;
+    const estadoDocumento = esRechazoDeSunat
+      ? DocumentStatus.REJECTED
+      : error.reintentable
+        ? DocumentStatus.PENDING
+        : DocumentStatus.SEND_ERROR;
 
     await prisma.$transaction([
       prisma.sunatEnvio.update({
