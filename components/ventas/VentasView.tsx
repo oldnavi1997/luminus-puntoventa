@@ -61,6 +61,9 @@ const METHOD_LABEL: Record<string, string> = {
   MIXTO:    "Mixto",
 };
 
+/** Debe coincidir con MIN_BUSQUEDA de app/api/ventas/route.ts. */
+const MIN_BUSQUEDA = 2;
+
 const LOCATION_LABEL: Record<string, string> = { TIENDA: "Tienda", ALMACEN: "Almacén", WEB: "Web" };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -104,16 +107,32 @@ export function VentasView() {
   const [editingDoc, setEditingDoc] = useState<Sale | null>(null);
   const [printDoc,  setPrintDoc]    = useState<Sale | null>(null);
   const [resolviendo, setResolviendo] = useState(0);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [total, setTotal] = useState(0);
 
-  function fetchDocs(d: string, all = false) {
+  // Mismo patron inline que ProductGrid, InventoryView y MovimientosView:
+  // el repo no tiene un hook compartido de debounce.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  function fetchDocs(d: string, all = false, q = "") {
     setLoading(true);
-    const url = all ? "/api/ventas?all=true" : `/api/ventas?date=${d}`;
-    fetch(url)
+    const params = new URLSearchParams();
+    // Buscar ignora fecha y modo: el servidor recorre todo el historial.
+    if (q.trim().length >= MIN_BUSQUEDA) params.set("q", q.trim());
+    else if (all) params.set("all", "true");
+    else params.set("date", d);
+
+    fetch(`/api/ventas?${params}`)
       .then((r) => r.json())
       .then((data) => {
         const docs: Sale[] = data.docs ?? [];
         setDocs(docs);
         setStats(data.stats);
+        setTotal(data.total ?? docs.length);
         setLoading(false);
         resolverPendientes(docs);
       })
@@ -149,7 +168,7 @@ export function VentasView() {
     }
   }
 
-  useEffect(() => { fetchDocs(date, allHistory); }, [date, allHistory]);
+  useEffect(() => { fetchDocs(date, allHistory, debouncedQuery); }, [date, allHistory, debouncedQuery]);
 
   function toggleExpand(id: string) {
     setExpanded((prev) => {
@@ -163,6 +182,7 @@ export function VentasView() {
     setDocs((prev) => prev.map((d) => d.id === id ? { ...d, ...data } : d));
   }
 
+  const buscando = debouncedQuery.trim().length >= MIN_BUSQUEDA;
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const filteredDocs = locationFilter === "ALL" ? docs : docs.filter((d) => d.location === locationFilter);
   const hasAdelantos = filteredDocs.some((d) => d.montoAdelanto != null);
@@ -192,8 +212,29 @@ export function VentasView() {
         {/* Table */}
         <div className="bg-surface border border-border rounded-xl overflow-hidden">
           {/* Toolbar */}
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-            {!allHistory && (
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-border flex-wrap">
+            <div className="relative flex-1 min-w-56 max-w-80">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" />
+              <input
+                className="w-full bg-surface-light border border-border rounded-lg pl-8 pr-8 py-2 text-[13px] text-ink placeholder-ink-4 focus:outline-none focus:border-accent"
+                placeholder="Buscar por cliente, DNI, celular, montura o SKU..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              {query && (
+                <button
+                  onClick={() => setQuery("")}
+                  title="Limpiar busqueda"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-4 hover:text-ink transition-colors"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+            {buscando && (
+              <span className="text-[11.5px] text-ink-4">en todo el historial</span>
+            )}
+            {!buscando && !allHistory && (
               <input
                 type="date"
                 value={date}
@@ -201,7 +242,7 @@ export function VentasView() {
                 className="bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
               />
             )}
-            {!allHistory && date !== today && (
+            {!buscando && !allHistory && date !== today && (
               <button
                 onClick={() => setDate(today)}
                 className="text-[12px] text-ink-3 hover:text-ink px-3 py-2 bg-surface-light border border-border rounded-lg transition-colors"
@@ -209,7 +250,7 @@ export function VentasView() {
                 Hoy
               </button>
             )}
-            {isAdmin && (
+            {!buscando && isAdmin && (
               <button
                 onClick={() => { setAllHistory((v) => !v); setExpanded(new Set()); }}
                 className={`text-[12px] font-medium px-3 py-2 rounded-lg border transition-colors ${
@@ -243,7 +284,11 @@ export function VentasView() {
                 resolviendo {resolviendo} documento{resolviendo !== 1 ? "s" : ""}...
               </span>
             )}
-            <span className="text-[12.5px] text-ink-3 ml-auto">{filteredDocs.length} ventas</span>
+            <span className="text-[12.5px] text-ink-3 ml-auto">
+              {buscando && total > docs.length
+                ? `${filteredDocs.length} de ${total} — afina la busqueda`
+                : `${filteredDocs.length} ventas`}
+            </span>
           </div>
 
           {loading ? (
@@ -251,7 +296,9 @@ export function VentasView() {
           ) : filteredDocs.length === 0 ? (
             <div className="p-12 text-center">
               <ReceiptIcon size={32} className="mx-auto text-ink-4 mb-3 opacity-50" />
-              <p className="text-[13px] text-ink-3">Sin ventas para esta fecha</p>
+              <p className="text-[13px] text-ink-3">
+                {buscando ? `Sin resultados para «${debouncedQuery.trim()}»` : "Sin ventas para esta fecha"}
+              </p>
             </div>
           ) : (
             <table className="w-full border-collapse">
@@ -513,7 +560,7 @@ export function VentasView() {
           onClose={() => setDeleteDoc(null)}
           onSuccess={() => {
             setDeleteDoc(null);
-            fetchDocs(date);
+            fetchDocs(date, allHistory, debouncedQuery);
             router.refresh();
           }}
         />

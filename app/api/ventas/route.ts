@@ -12,6 +12,11 @@ import { formatCorrelativo } from "@/lib/sunat";
 
 // ─── GET: historial de ventas por fecha ──────────────────────────────────────
 
+/** Tope de filas transferidas al buscar; las stats siguen siendo del total. */
+const MAX_RESULTADOS = 100;
+/** Menos caracteres que esto no filtra nada util y solo genera ruido. */
+const MIN_BUSQUEDA = 2;
+
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -21,9 +26,40 @@ export async function GET(req: NextRequest) {
   const start = new Date(`${date}T00:00:00-05:00`);
   const end   = new Date(`${date}T23:59:59.999-05:00`);
 
+  // Buscar manda sobre la fecha: quien busca no sabe de que dia es la venta.
+  // Disponible tambien para cajeros, que necesitan hallar una venta vieja para
+  // reimprimir un ticket o cobrar un saldo (borrarla sigue siendo de ADMIN).
+  const q = (req.nextUrl.searchParams.get("q") ?? "").trim();
+  const buscando = q.length >= MIN_BUSQUEDA;
+  // SKU sin ceros a la izquierda ("0632" -> "632"), mismo truco que /api/productos.
+  const qStripped = q.replace(/^0+/, "") || q;
+
+  const where = buscando
+    ? {
+        OR: [
+          { buyerName:      { contains: q, mode: "insensitive" as const } },
+          { buyerPhone:     { contains: q } },
+          { buyerDocNumber: { contains: q } },
+          { fullNumber:     { contains: q, mode: "insensitive" as const } },
+          // description es el nombre del producto al momento de vender; name y sku
+          // son los del catalogo hoy. Con los tres, un producto renombrado se
+          // encuentra tanto por el nombre viejo como por el nuevo.
+          { items: { some: { description:     { contains: q, mode: "insensitive" as const } } } },
+          { items: { some: { product: { name: { contains: q, mode: "insensitive" as const } } } } },
+          { items: { some: { product: { sku:  { contains: q, mode: "insensitive" as const } } } } },
+          ...(qStripped !== q
+            ? [{ items: { some: { product: { sku: { contains: qStripped, mode: "insensitive" as const } } } } }]
+            : []),
+        ],
+      }
+    : allHistory
+      ? {}
+      : { createdAt: { gte: start, lte: end } };
+
   const docs = await prisma.saleDocument.findMany({
-    where: allHistory ? undefined : { createdAt: { gte: start, lte: end } },
+    where,
     orderBy: { createdAt: "desc" },
+    ...(buscando ? { take: MAX_RESULTADOS } : {}),
     include: {
       cashier: { select: { name: true } },
       saldoCobradoPor: { select: { name: true } },
@@ -72,13 +108,21 @@ export async function GET(req: NextRequest) {
     })),
   }));
 
-  const totalVentas = serialized.reduce((s, d) => s + d.total, 0);
-  const countVentas = serialized.length;
+  // Agregadas en la base: con `take` las estadisticas ya no pueden salir del array.
+  const agg = await prisma.saleDocument.aggregate({
+    where,
+    _sum: { total: true },
+    _count: true,
+  });
+  const totalVentas = Number(agg._sum.total ?? 0);
+  const countVentas = agg._count;
   const ticketPromedio = countVentas > 0 ? totalVentas / countVentas : 0;
 
   return NextResponse.json({
     docs: serialized,
     stats: { totalVentas, countVentas, ticketPromedio },
+    // Cuantas hay de verdad, para poder avisar si la lista viene recortada.
+    total: countVentas,
   });
 }
 
