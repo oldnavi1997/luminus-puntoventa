@@ -20,7 +20,9 @@ This POS project **shares its Postgres database** with the ecommerce project at 
 - `npm run verify:schema` fails if the two files drift. Falls back to a presence check when the canonical repo is not accessible (e.g. Railway build).
 - Hooks: `predev` runs `sync:schema` + `prisma generate`; `prebuild` runs `verify:schema` + `prisma generate`.
 
-**When the ecommerce schema changes:** sync here (`npm run sync:schema`), commit the updated `prisma/schema.prisma`, push. Railway deploys ecommerce first (it runs `prisma migrate deploy`), then POS just regenerates the client.
+**When the ecommerce schema changes:** sync here (`npm run sync:schema`), commit the updated `prisma/schema.prisma`, push.
+
+**The migration must be applied to the production DB by hand, BEFORE this app deploys.** Nothing does it automatically: the ecommerce runs on Vercel with `prisma generate && next build`, which only rebuilds the client. Deploying the POS first means it queries tables that do not exist yet and every affected request fails. See "Applying migrations to production" in `D:\Cursor\luminus\CLAUDE.md`.
 
 ### If the user asks to add/modify/drop a table from THIS project
 
@@ -29,7 +31,7 @@ You cannot do schema work from this repo. The full procedure lives in `D:\Cursor
 1. Tell the user the schema change must originate in `D:\Cursor\luminus` (canonical schema owner).
 2. Switch to that directory: edit `prisma/schema.prisma`, run `npx prisma migrate dev --name <descriptor>`, build to verify.
 3. Come back here: `npm run sync:schema && npx prisma generate`, then implement the feature.
-4. Commit + push ecommerce FIRST, then POS. Railway must run the ecommerce `prisma migrate deploy` before the POS service tries to query the new column/table.
+4. Apply the migration to production by hand (`npx prisma migrate deploy` from the ecommerce repo against `DATABASE_URL_PROD`), THEN commit + push both repos. No pipeline applies migrations.
 
 Never edit `prisma/schema.prisma` here directly, never run `prisma migrate`/`db push` from this repo — both break the contract and the second one will drop ecommerce tables.
 
@@ -117,7 +119,7 @@ Dev database: `postgresql://postgres:75207666@localhost:5433/luminus` (shared wi
 1. Build: `npm ci && npx prisma generate && npm run build`
 2. Deploy: `npm start`
 
-**No schema operations on Railway from this service.** The ecommerce service owns migrations via its own `prisma migrate deploy` startCommand.
+**No schema operations on Railway from this service.** The canonical schema belongs to the ecommerce repo, and its migrations are applied manually against the production DB — not by any deploy pipeline.
 
 Catalog seeds are NOT auto-run on each deploy anymore — run `npx tsx prisma/seed-catalog.ts` manually as a Railway one-off job if `lens_catalog` ever needs reseeding.
 
