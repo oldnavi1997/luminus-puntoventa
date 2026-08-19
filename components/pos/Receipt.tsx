@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { useReactToPrint } from "react-to-print";
 import { X, Printer } from "lucide-react";
+import { numeroALetras } from "@/lib/numero-letras";
 
 interface ReceiptItem {
   description: string;
@@ -32,41 +33,6 @@ interface ReceiptProps {
   montoRecibido?: number;
   cashierName?: string;
   onClose: () => void;
-}
-
-function numeroALetras(monto: number): string {
-  const entero = Math.floor(monto);
-  const centavos = Math.round((monto - entero) * 100);
-  const unidades = ["", "UNO", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE",
-    "DIEZ", "ONCE", "DOCE", "TRECE", "CATORCE", "QUINCE", "DIECISÉIS", "DIECISIETE", "DIECIOCHO", "DIECINUEVE"];
-  const decenas = ["", "", "VEINTE", "TREINTA", "CUARENTA", "CINCUENTA", "SESENTA", "SETENTA", "OCHENTA", "NOVENTA"];
-  const centenas = ["", "CIENTO", "DOSCIENTOS", "TRESCIENTOS", "CUATROCIENTOS", "QUINIENTOS",
-    "SEISCIENTOS", "SETECIENTOS", "OCHOCIENTOS", "NOVECIENTOS"];
-
-  function grupo(n: number): string {
-    if (n === 0) return "";
-    if (n === 100) return "CIEN";
-    let r = "";
-    if (n >= 100) { r += centenas[Math.floor(n / 100)] + " "; n %= 100; }
-    if (n >= 20) { r += decenas[Math.floor(n / 10)]; if (n % 10) r += " Y " + unidades[n % 10]; }
-    else if (n > 0) r += unidades[n];
-    return r.trim();
-  }
-
-  function convertir(n: number): string {
-    if (n === 0) return "CERO";
-    let r = "";
-    if (n >= 1000000) { r += grupo(Math.floor(n / 1000000)) + " MILLONES "; n %= 1000000; }
-    if (n >= 1000) {
-      const miles = Math.floor(n / 1000);
-      r += miles === 1 ? "MIL " : grupo(miles) + " MIL ";
-      n %= 1000;
-    }
-    r += grupo(n);
-    return r.trim();
-  }
-
-  return `${convertir(entero)} ${centavos.toString().padStart(2, "0")}/100 SOLES`;
 }
 
 export function Receipt({ document, items, buyerName, buyerDoc, fecha: fechaVenta, paymentMethod, montoRecibido, cashierName, onClose }: ReceiptProps) {
