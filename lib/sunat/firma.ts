@@ -97,3 +97,13 @@ function escaparXml(v: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+/**
+ * Saca el DigestValue de un XML ya firmado.
+ *
+ * Es el "valor resumen" que SUNAT exige en la representación impresa y en el
+ * QR, así que conviene guardarlo junto al envío en vez de recalcularlo luego.
+ */
+export function extraerDigest(xmlFirmado: string): string | null {
+  return /<ds:DigestValue>([^<]*)<\/ds:DigestValue>/.exec(xmlFirmado)?.[1] ?? null;
+}

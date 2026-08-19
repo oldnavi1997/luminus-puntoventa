@@ -13,7 +13,9 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "sunat:cert": "tsx --env-file=.env.local scripts/diagnostico-certificado.ts"
+    "sunat:cert": "tsx --env-file=.env.local scripts/diagnostico-certificado.ts",
+    "sunat:b64": "tsx --env-file=.env.local scripts/certificado-base64.ts",
+    "sunat:enviar": "tsx --env-file=.env.local scripts/enviar-prueba.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

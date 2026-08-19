@@ -3,9 +3,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { buildApiSunatItems, buildApiSunatPayload, formatCorrelativo } from "@/lib/sunat";
-import { emitirDocumento } from "@/lib/apisunat";
+import { formatCorrelativo } from "@/lib/sunat";
 import { enqueueDocument } from "@/lib/queue";
+import { emitirComprobante } from "@/lib/sunat/emitir";
 import { DocumentType, DocumentStatus } from "@/app/generated/prisma/client";
 
 const Schema = z.object({
@@ -95,58 +95,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   });
 
-  try {
-    const apisunatItems = buildApiSunatItems(
-      newDoc.items.map((i) => ({ description: i.description, quantity: i.quantity, lineTotal: Number(i.lineTotal) })),
-      Number(newDoc.total),
-    );
-    const payload = buildApiSunatPayload({
-      tipo: docTypeEnum === DocumentType.FACTURA ? 1 : 2,
-      serie: newDoc.serie,
-      numero: newDoc.correlativo,
-      cliente: {
-        docType: buyer.docType,
-        docNumber: buyer.docNumber,
-        name: buyer.name,
-        address: buyer.address,
-        email: buyer.email,
-      },
-      items: apisunatItems,
-      totalConIGV: Number(newDoc.total),
-    });
-    const apisunatResult = await emitirDocumento(payload);
-    const isAccepted = apisunatResult.success && apisunatResult.payload.estado === "ACEPTADO";
-    await prisma.saleDocument.update({
-      where: { id: newDoc.id },
-      data: {
-        status: isAccepted ? DocumentStatus.ACCEPTED : DocumentStatus.REJECTED,
-        nubefactId: apisunatResult.payload.hash,
-        nubefactResponse: apisunatResult as object,
-        pdfUrl: apisunatResult.payload.pdf.a4,
-        xmlUrl: apisunatResult.payload.xml,
-        qrCode: null,
-        sunatCdrCode: apisunatResult.payload.estado,
-        sunatCdrDesc: apisunatResult.message,
-        submittedAt: new Date(),
-      },
-    });
-    return NextResponse.json({
-      id: newDoc.id,
-      fullNumber: newDoc.fullNumber,
-      status: isAccepted ? "ACCEPTED" : "REJECTED",
-      pdfUrl: apisunatResult.payload.pdf.a4,
-    });
-  } catch {
-    await prisma.saleDocument.update({
-      where: { id: newDoc.id },
-      data: { status: DocumentStatus.PENDING },
-    });
-    await enqueueDocument(newDoc.id);
-    return NextResponse.json({
-      id: newDoc.id,
-      fullNumber: newDoc.fullNumber,
-      status: "PENDING",
-      pdfUrl: null,
-    });
-  }
+  // Misma emisión que una venta nueva: el comprobante convertido no puede
+  // salir por otro camino que el resto, o acabaríamos con unos documentos
+  // firmados por nosotros y otros por el OSE.
+  const emision = await emitirComprobante(newDoc.id);
+  if (emision.reintentable) await enqueueDocument(newDoc.id);
+
+  return NextResponse.json({
+    id: newDoc.id,
+    fullNumber: newDoc.fullNumber,
+    status: emision.estadoDocumento,
+    pdfUrl: null,
+    sunat: {
+      aceptado: emision.aceptado,
+      codigo: emision.codigo,
+      mensaje: emision.mensaje,
+      observaciones: emision.observaciones,
+    },
+  });
 }

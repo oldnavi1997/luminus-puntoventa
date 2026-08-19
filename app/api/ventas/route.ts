@@ -3,9 +3,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { calcularIGV, buildApiSunatPayload, buildApiSunatItems } from "@/lib/sunat";
-import { emitirDocumento } from "@/lib/apisunat";
+import { calcularIGV } from "@/lib/sunat";
 import { enqueueDocument } from "@/lib/queue";
+import { emitirComprobante } from "@/lib/sunat/emitir";
 import { getLensLabel } from "@/lib/lens-tree";
 import { DocumentType, DocumentStatus } from "@/app/generated/prisma/client";
 import { formatCorrelativo } from "@/lib/sunat";
@@ -373,73 +373,32 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Para BOLETA/FACTURA: intentar emisión a ApiSunat (fuera de la transacción)
-    try {
-      const apisunatItems = buildApiSunatItems(
-        doc.items.map((i) => ({ description: i.description, quantity: i.quantity, lineTotal: Number(i.lineTotal) })),
-        Number(doc.total),
-      );
+    // Para BOLETA/FACTURA: emitir contra SUNAT, fuera de la transacción.
+    //
+    // La emisión no puede tumbar la venta: el stock ya se descontó y el
+    // correlativo ya se asignó. Por eso `emitirComprobante` devuelve el
+    // resultado en vez de lanzar, y el cajero se entera por el estado.
+    const emision = await emitirComprobante(doc.id);
 
-      const payload = buildApiSunatPayload({
-        tipo: doc.type === DocumentType.FACTURA ? 1 : 2,
-        serie: doc.serie,
-        numero: doc.correlativo,
-        cliente: {
-          docType: result.buyer.docType,
-          docNumber: result.buyer.docNumber,
-          name: result.buyer.name,
-          address: result.buyer.address ?? undefined,
-          email: result.buyer.email ?? undefined,
-        },
-        items: apisunatItems,
-        totalConIGV: Number(doc.total),
-      });
+    // Sólo se encola lo transitorio. Un rechazo del validador o un dato
+    // incompleto se reintentarían igual de mal: esos hay que corregirlos.
+    if (emision.reintentable) await enqueueDocument(doc.id);
 
-      const apisunatResult = await emitirDocumento(payload);
-      const isAccepted = apisunatResult.success && apisunatResult.payload.estado === "ACEPTADO";
-
-      await prisma.saleDocument.update({
-        where: { id: doc.id },
-        data: {
-          status: isAccepted ? DocumentStatus.ACCEPTED : DocumentStatus.REJECTED,
-          nubefactId: apisunatResult.payload.hash,
-          nubefactResponse: apisunatResult as object,
-          pdfUrl: apisunatResult.payload.pdf.a4,
-          xmlUrl: apisunatResult.payload.xml,
-          qrCode: null,
-          sunatCdrCode: apisunatResult.payload.estado,
-          sunatCdrDesc: apisunatResult.message,
-          submittedAt: new Date(),
-        },
-      });
-
-      return NextResponse.json({
-        id: doc.id,
-        fullNumber: doc.fullNumber,
-        total: Number(doc.total),
-        cambio: Number(doc.cambio ?? 0),
-        status: isAccepted ? "ACCEPTED" : "REJECTED",
-        pdfUrl: apisunatResult.payload.pdf.a4,
-        qrCode: null,
-      });
-
-    } catch {
-      await prisma.saleDocument.update({
-        where: { id: doc.id },
-        data: { status: DocumentStatus.PENDING },
-      });
-      await enqueueDocument(doc.id);
-
-      return NextResponse.json({
-        id: doc.id,
-        fullNumber: doc.fullNumber,
-        total: Number(doc.total),
-        cambio: Number(doc.cambio ?? 0),
-        status: "PENDING",
-        pdfUrl: null,
-        qrCode: null,
-      });
-    }
+    return NextResponse.json({
+      id: doc.id,
+      fullNumber: doc.fullNumber,
+      total: Number(doc.total),
+      cambio: Number(doc.cambio ?? 0),
+      status: emision.estadoDocumento,
+      pdfUrl: null,
+      qrCode: null,
+      sunat: {
+        aceptado: emision.aceptado,
+        codigo: emision.codigo,
+        mensaje: emision.mensaje,
+        observaciones: emision.observaciones,
+      },
+    });
 
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error al procesar la venta";

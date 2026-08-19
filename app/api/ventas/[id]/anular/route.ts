@@ -25,8 +25,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!doc) return NextResponse.json({ error: "Documento no encontrado" }, { status: 404 });
   if (doc.type === DocumentType.NOTA_VENTA)
     return NextResponse.json({ error: "Las Notas de Venta no se anulan por SUNAT" }, { status: 400 });
-  if (doc.status !== "ACCEPTED")
+  if (doc.status !== "ACCEPTED" && doc.status !== "ACCEPTED_WITH_OBSERVATIONS")
     return NextResponse.json({ error: "Solo se pueden anular documentos aceptados por SUNAT" }, { status: 400 });
+
+  // Los comprobantes que emitimos nosotros (SEE Del Contribuyente) el OSE no
+  // los conoce: pedirle la baja a ApiSunat no anularía nada ante SUNAT, pero sí
+  // dejaría el documento marcado como VOIDED en nuestra base. Eso es peor que
+  // no poder anular, así que se corta aquí hasta que estén implementadas la
+  // comunicación de baja (facturas) y el resumen de anulación (boletas).
+  const emitidoPorNosotros = await prisma.sunatEnvio.findFirst({
+    where: { documentId: id },
+    select: { id: true },
+  });
+
+  if (emitidoPorNosotros) {
+    return NextResponse.json(
+      {
+        error:
+          "Este comprobante se emitió directamente a SUNAT y su anulación todavía no está implementada. " +
+          "Anúlalo desde SUNAT Operaciones en Línea mientras tanto.",
+      },
+      { status: 501 },
+    );
+  }
 
   await prisma.saleDocument.update({ where: { id }, data: { status: "VOID_PENDING" } });
 
