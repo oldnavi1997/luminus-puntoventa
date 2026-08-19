@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -15,11 +15,19 @@ import { cargarCertificado } from "@/lib/sunat/certificado";
  * Lo que NO puede verificar sin emitir es la contraseña SOL: eso sólo lo dice
  * SUNAT cuando se le manda algo.
  */
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  if (session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Prohibido" }, { status: 403 });
+export async function GET(req: NextRequest) {
+  // Dos llamadores, igual que la cola: un ADMIN con sesión desde la interfaz,
+  // o una herramienta con el token. Lo segundo permite verificar un despliegue
+  // sin depender de tener sesión abierta en ese navegador y dominio.
+  const secreto = process.env.QUEUE_SECRET;
+  const esToken = !!secreto && req.headers.get("authorization") === `Bearer ${secreto}`;
+
+  if (!esToken) {
+    const session = await getServerSession(authOptions);
+    if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    if (session.user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Prohibido" }, { status: 403 });
+    }
   }
 
   const problemas: string[] = [];
