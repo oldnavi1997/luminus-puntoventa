@@ -79,9 +79,17 @@ export function clasificarCodigoSunat(codigo: string): CodigoErrorSunat | "ACEPT
   if (n >= 2000) return "RECHAZADO";
   if (n >= 1000) return "RECHAZADO";
 
-  // Rango 0100-0999: casi todo es configuración nuestra.
-  if (n === 100 || n === 98 || n === 99) return "CONEXION";
+  // Rango 0100-0999: casi todo es configuración nuestra o del lado de SUNAT.
+  if (n === 100 || n === 98 || n === 99 || n === 109) return "CONEXION";
+
+  // Identidad y permisos del usuario SOL. El 0111 ("no tiene el perfil para
+  // enviar comprobantes electrónicos") es el mas confuso de todos: las
+  // credenciales son correctas y autentican, pero a ese usuario no le han
+  // habilitado el envio de comprobantes por servicio web. Clasificarlo como
+  // XML inválido —que es donde caía— manda a revisar el sitio equivocado.
+  if (n === 102 || n === 103 || n === 105 || n === 111) return "CREDENCIALES";
   if (n >= 150 && n <= 199) return "CREDENCIALES";
+
   return "XML_INVALIDO";
 }
 
