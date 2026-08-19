@@ -117,7 +117,8 @@ function errorDeFault(fault: Record<string, unknown>): ErrorSunat {
   if (clasificacion === "CREDENCIALES") {
     return new ErrorSunat(
       "CREDENCIALES",
-      `SUNAT rechazó las credenciales (${codigo}): ${faultstring}. Revisa SUNAT_SOL_USER y SUNAT_SOL_PASSWORD — el usuario debe ser el SOL secundario.`,
+      `SUNAT rechazó las credenciales (${codigo}): ${faultstring}. Revisa SUNAT_SOL_USER y SUNAT_SOL_PASSWORD. ` +
+        `SUNAT_SOL_USER es el nombre del usuario SOL a secas, sin el RUC delante: el RUC se antepone solo al armar el sobre.`,
       detalle,
     );
   }
