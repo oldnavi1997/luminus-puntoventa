@@ -77,16 +77,39 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Estado de la cola: si hay documentos esperando, conviene saberlo antes de
-  // dar por bueno el despliegue.
-  const [enCola, agotados, conError] = await Promise.all([
-    prisma.documentQueue.count(),
-    prisma.documentQueue.count({ where: { attempts: { gte: 10 } } }),
-    prisma.saleDocument.count({ where: { status: "SEND_ERROR" } }),
-  ]);
+  // Estado de la base y de la cola.
+  //
+  // Va con red porque aquí se cae justo el caso que este endpoint existe para
+  // detectar: si la migración del ecommerce no llegó a producción, esta base no
+  // conoce ni la tabla SunatEnvio ni los valores nuevos del enum, y entonces
+  // NINGUNA venta con comprobante puede completarse. Reventar con un 500 sería
+  // la peor forma posible de contarlo.
+  let cola: { pendientes: number; agotados: number; enSendError: number } | null = null;
+  let esquemaAlDia = false;
 
-  if (agotados > 0) avisos.push(`${agotados} comprobante(s) agotaron sus reintentos.`);
-  if (conError > 0) avisos.push(`${conError} comprobante(s) quedaron en SEND_ERROR.`);
+  try {
+    const [pendientes, agotados, enSendError, envios] = await Promise.all([
+      prisma.documentQueue.count(),
+      prisma.documentQueue.count({ where: { attempts: { gte: 10 } } }),
+      prisma.saleDocument.count({ where: { status: "SEND_ERROR" } }),
+      prisma.sunatEnvio.count(),
+    ]);
+
+    esquemaAlDia = true;
+    cola = { pendientes, agotados, enSendError };
+
+    if (agotados > 0) avisos.push(`${agotados} comprobante(s) agotaron sus reintentos.`);
+    if (enSendError > 0) avisos.push(`${enSendError} comprobante(s) quedaron en SEND_ERROR.`);
+    if (envios === 0) avisos.push("Todavía no se ha emitido ningún comprobante por esta vía.");
+  } catch (err) {
+    const detalle = err instanceof Error ? err.message : String(err);
+    problemas.push(
+      "La base de datos no tiene la estructura de emisión electrónica. " +
+        "Falta desplegar el servicio de ecommerce, que es el único que aplica las migraciones " +
+        "(`prisma migrate deploy`). Hasta entonces NINGUNA venta con boleta o factura podrá " +
+        `completarse. Detalle: ${detalle.slice(0, 200)}`,
+    );
+  }
   if (!process.env.QUEUE_SECRET) {
     avisos.push("QUEUE_SECRET no está definido: ningún cron podrá drenar la cola.");
   }
@@ -106,6 +129,7 @@ export async function GET(req: NextRequest) {
       domicilio: `${config.domicilio.distrito}, ${config.domicilio.provincia}, ${config.domicilio.departamento} (ubigeo ${config.domicilio.ubigeo}, local ${config.domicilio.codigoEstablecimiento})`,
     },
     certificado,
-    cola: { pendientes: enCola, agotados, enSendError: conError },
+    esquemaAlDia,
+    cola,
   });
 }
