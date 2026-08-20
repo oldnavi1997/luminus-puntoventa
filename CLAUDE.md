@@ -81,13 +81,82 @@ The schema is shared with the Luminus ecommerce app. POS-only models:
 - `LensCatalog`, `LunaSinMedida`, `FabricationCost` — Lens pricing models
 - `CajaRetiro` — Cash withdrawal records within a session
 
-### Electronic Invoicing (SUNAT)
+### Electronic Invoicing (SUNAT) — SEE Del Contribuyente
 
-Two OSE integrations exist in parallel:
-- **Primary**: ApiSunat (`lib/apisunat.ts`) — active, used in production
-- **Backup**: Nubefact (`lib/nubefact.ts`) — disabled (env vars commented out)
+The POS emits **directly to SUNAT**, with no OSE in between: it builds the UBL 2.1
+XML, signs it with the company's own certificate, sends it over SOAP and reads the
+CDR. `lib/apisunat.ts` survives **only** for DNI/RUC lookup (`consultarDNI`,
+`consultarRUC`); `lib/nubefact.ts` is dead code. Neither emits anything any more.
 
-Sales with `DocumentType` BOLETA/FACTURA are placed in `DocumentQueue` and processed asynchronously by `/api/queue`. NOTA_VENTA is a local document only (not submitted to SUNAT).
+Module map (`lib/sunat/`):
+
+| File | Role |
+|---|---|
+| `config.ts` | Env-driven credentials + endpoints. Resolved on first call, never at import, so a build without env vars still succeeds |
+| `certificado.ts` | PKCS#12 loader (`.pfx` and `.p12` are the same container — no conversion needed) |
+| `calculo.ts` | Money. See the invariant below |
+| `ubl/comprobante.ts` | UBL 2.1 for factura + boleta |
+| `firma.ts` | XMLDSig enveloped signature |
+| `empaquetado.ts` / `cliente-soap.ts` / `cdr.ts` | ZIP, `sendBill`/`sendSummary`/`getStatus` with WSSE, CDR parsing |
+| `emitir.ts` | Orchestrator: XML → sign → zip → send → CDR → DB |
+| `validacion.ts` | Buyer rules (factura needs RUC; boleta ≥ S/700 needs DNI) |
+
+**Flow.** A BOLETA/FACTURA sale calls `emitirComprobante` synchronously from
+`app/api/ventas/route.ts` (and from `.../[id]/convertir`). NOTA_VENTA is internal
+and never reaches SUNAT. Every attempt writes a `SunatEnvio` row (XML, hash, CDR,
+SUNAT code, observations); `SunatTicket` covers resumen diario / comunicación de baja.
+
+**Invariants that cost real money to rediscover — do not "simplify" these:**
+
+- **The canonicalization algorithm must stay listed explicitly in the signature's
+  transform chain** (`firma.ts`). `xml-crypto`'s `getCanonXml` applies only the
+  transforms you list and does *not* fall back to `canonicalizationAlgorithm`. With
+  only the enveloped transform, the digest is computed over the raw DOM
+  serialization while SUNAT canonicalizes per spec — every document is rejected for
+  an invalid signature.
+- **IGV is derived by subtraction** (`importe − valorVenta`), never by multiplying.
+  That makes each line reconcile with itself and the declared total match the amount
+  actually charged, to the cent. The global discount is prorated across lines rather
+  than declared as a document-level `AllowanceCharge`.
+- **`REJECTED` means SUNAT evaluated the document and refused it.** Anything else —
+  bad SOL permissions, missing env var, certificate, network, malformed envelope —
+  is `SEND_ERROR`, because SUNAT never registered it and **the correlativo is still
+  usable**. Marking those `REJECTED` burns a live number and lies about what happened.
+- **`emitirComprobante` refuses to re-send a document that already has an accepted
+  envío.** Re-emitting over an accepted comprobante is the most expensive mistake to
+  undo with SUNAT.
+- **The `SunatEnvio` row is created *before* sending**, so a mid-flight failure still
+  leaves evidence of what went out.
+
+**Things the official SUNAT PDF guide gets wrong** (it is an older revision; all
+three were found by getting rejected in beta, and are locked down by tests in
+`tests/sunat/comprobante.test.ts`):
+
+- `1008` — the issuer RUC goes in `cac:PartyIdentification/cbc:ID`, *not* in
+  `cac:PartyTaxScheme/cbc:CompanyID`.
+- `3205` — the operation type is read from `cbc:InvoiceTypeCode/@listID`, not from
+  `cbc:ProfileID`.
+- `3244` — `cac:PaymentTerms` is mandatory on facturas (RS 193-2020).
+- Plus `4252`/`4255`/`4256`: `@listName` wants the short names (`Tipo de Documento`,
+  `Tipo de Precio`, `Afectacion del IGV`) and `TaxScheme/cbc:ID` wants
+  `schemeAgencyID="6"`, not `schemeName`/`schemeAgencyName`.
+
+**Queue.** `DocumentQueue` only holds **transient** failures (timeouts, network). A
+validator rejection or incomplete buyer data would fail identically on retry, so
+those wait for correction instead. Drained by `POST /api/queue/process`, which
+accepts either an ADMIN session or `Authorization: Bearer $QUEUE_SECRET`.
+**No cron is configured yet** — nothing drains it on a schedule. (For years the
+endpoint only accepted a session, so no cron *could* call it and the queue never
+drained at all.)
+
+**Not implemented yet:** voiding. `app/api/ventas/[id]/anular` returns **501** for
+self-emitted documents — ApiSunat cannot void what it never issued, and letting it
+try would mark the document `VOIDED` locally while SUNAT still considers it valid.
+Needs comunicación de baja (facturas) and resumen de anulación (boletas).
+
+**Tooling.** `npm test` (vitest), `npm run sunat:cert` (verify the certificate),
+`npm run sunat:b64` (encode it for Railway), `npm run sunat:enviar` (send a test
+document), and `GET /api/sunat/estado` (diagnose a deployment without emitting).
 
 ### Authentication
 
@@ -108,8 +177,14 @@ Copy `.env.example` to `.env.local`. Required:
 | `DATABASE_URL` | PostgreSQL connection string |
 | `NEXTAUTH_SECRET` | JWT secret (unique per env) |
 | `NEXTAUTH_URL` | Full base URL (e.g. `http://localhost:3003`) |
-| `APISUNAT_TOKEN` | ApiSunat OSE token for SUNAT e-invoicing |
-| `APISUNAT_BASE_URL` | ApiSunat base URL (sandbox vs production) |
+| `SUNAT_RUC`, `SUNAT_RAZON_SOCIAL` | Issuer identity |
+| `SUNAT_DIRECCION`, `SUNAT_UBIGEO`, `SUNAT_DISTRITO`… | Fiscal address for the UBL issuer block |
+| `SUNAT_ENV` | `beta` or `produccion`. **`beta` documents have no tax validity** |
+| `SUNAT_SOL_USER`, `SUNAT_SOL_PASSWORD` | SOL user, **without the RUC prefix** — it is prepended when building the WSSE envelope. The user needs the *send electronic comprobantes* permission or SUNAT answers `0111` |
+| `SUNAT_CERTIFICATE_B64` | The `.p12`/`.pfx` as base64. Railway's filesystem is ephemeral, so a path will not survive; `SUNAT_CERTIFICATE_PATH` exists for local dev only |
+| `SUNAT_CERTIFICATE_PASSWORD` | Certificate password |
+| `QUEUE_SECRET` | Bearer token so a cron can drain the queue |
+| `APISUNAT_TOKEN`, `APISUNAT_BASE_URL` | DNI/RUC lookup only — no longer used to emit |
 
 Dev database: `postgresql://postgres:75207666@localhost:5433/luminus` (shared with ecommerce, port 5433).
 
