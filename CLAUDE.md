@@ -236,7 +236,7 @@ Counters were realigned by hand with what the previous billing provider left beh
 `B001` at 53, `F001` at **28**, `NV001` at 251. The `27` that `F001` continued from came
 from the last PDF the owner still had — the same reasoning that cost three correlativos
 on `B001` — but this time it was right: `F001-00000028` was accepted on the first
-attempt and no number was lost.
+attempt and no number was lost. That factura was later voided (see below), so `F001` continues at `29`.
 
 **Issue a factura as a conversion of a nota de venta, not as a direct FACTURA sale.**
 That is how the first one was done, and the asymmetry on rejection is the reason. A
@@ -256,14 +256,22 @@ no observations). `ConvertirView` sends only `docType`/`docNumber`/`name`, so ev
 converted factura goes out with no `cac:RegistrationAddress`, unlike the earlier beta
 run that had one.
 
-**Voiding is implemented and verified end to end — against beta.** The full cycle runs:
-create → emit → void → poll leaves the document `VOIDED` with `voidedAt`, `voidCdrCode`
-and the CDR stored, and the real flow (nota de venta → convert → void) puts the stock
-back, zeroes the cash session and voids the origin nota. **It has never run against
-production**, which is the one thing left: it needs a real comprobante that genuinely has
-to be voided — never emit one just to test the baja, since the correlativo is spent either
-way and it declares a sale that never happened. After the first one, check in SEE-SOL that
-SUNAT and the POS agree before trusting the flow.
+**Voiding works in production.** `F001-00000028` — the first factura this POS ever issued —
+was voided on 2026-08-21 with a comunicación de baja (ticket `202621682357685`). SUNAT
+accepted it and shows it as voided in SEE-SOL, and the POS closed the loop by itself: the
+document went `VOID_PENDING → VOIDED` when the poller picked up the ticket, and the cascade
+ran on real data — the nota de venta it had been converted from was voided with it, the
+stock went back and the cash session was debited.
+
+That leaves the whole circuit exercised in production: issue a boleta, issue a factura,
+void a factura. Only the boleta path (`RC` with `ConditionCode 3`) is still beta-only,
+though it is the same code and the same transport.
+
+**Never emit a comprobante just to test a baja.** The correlativo is spent either way and it
+declares a sale that never happened. Wait for one that genuinely has to be voided.
+
+**A voided correlativo does not come back.** `F001-00000028` is spent for good: reusing it
+answers `1032` ("reported and then voided"). The series continues at `F001-00000029`.
 
 **Still open:** notas de crédito, which is what the law asks for once the 7-day window has
 passed; today the POS refuses and points at SEE-SOL. And `npm run sunat:serie` has still
