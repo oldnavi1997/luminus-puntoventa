@@ -29,6 +29,7 @@ export async function register() {
   if (!Number.isFinite(intervalo) || intervalo <= 0) return;
 
   const { processQueue } = await import("@/lib/queue");
+  const { procesarTickets } = await import("@/lib/sunat/tickets");
 
   // Una pasada puede tardar más que el intervalo si SUNAT va lento; sin esto se
   // solaparían y dos pasadas cogerían el mismo comprobante.
@@ -48,6 +49,20 @@ export async function register() {
     } catch (err) {
       // Que una pasada falle no puede tumbar el servidor ni parar las siguientes.
       console.error("[cola] fallo al drenar:", err instanceof Error ? err.message : err);
+    }
+
+    // Los tickets van en su propio try: que la cola falle no puede dejar a un
+    // comprobante colgado en VOID_PENDING, ni al revés.
+    try {
+      const t = await procesarTickets();
+      if (t.consultados > 0) {
+        console.log(
+          `[tickets] consultados ${t.consultados}, anulados ${t.anulados}, ` +
+            `rechazados ${t.rechazados}, en proceso ${t.enProceso}, problemas ${t.problemas}`,
+        );
+      }
+    } catch (err) {
+      console.error("[tickets] fallo al sondear:", err instanceof Error ? err.message : err);
     } finally {
       enCurso = false;
     }

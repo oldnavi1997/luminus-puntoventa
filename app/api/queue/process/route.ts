@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { processQueue } from "@/lib/queue";
+import { procesarTickets } from "@/lib/sunat/tickets";
 
 /**
  * Drena la cola de comprobantes pendientes.
@@ -26,8 +27,12 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const resultado = await processQueue();
-  return NextResponse.json(resultado);
+  // Las dos colas del sistema: los comprobantes que no llegaron a enviarse y
+  // las bajas que esperan respuesta de SUNAT. Se drenan juntas para que forzar
+  // a mano tenga el mismo efecto que una pasada del intervalo.
+  const cola = await processQueue();
+  const tickets = await procesarTickets();
+  return NextResponse.json({ cola, tickets });
 }
 
 /** Estado de la cola, para poder mirarla sin drenarla. */
@@ -39,11 +44,16 @@ export async function GET() {
   }
 
   const { prisma } = await import("@/lib/prisma");
-  const [total, listos, agotados] = await Promise.all([
+  const [total, listos, agotados, ticketsPendientes, ticketsConProblema] = await Promise.all([
     prisma.documentQueue.count(),
     prisma.documentQueue.count({ where: { nextRetryAt: { lte: new Date() }, attempts: { lt: 10 } } }),
     prisma.documentQueue.count({ where: { attempts: { gte: 10 } } }),
+    prisma.sunatTicket.count({ where: { estado: "ENVIADO" } }),
+    prisma.sunatTicket.count({ where: { estado: "ERROR_ENVIO" } }),
   ]);
 
-  return NextResponse.json({ total, listos, agotados });
+  return NextResponse.json({
+    cola: { total, listos, agotados },
+    tickets: { pendientes: ticketsPendientes, conProblema: ticketsConProblema },
+  });
 }
