@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X, Banknote, CreditCard, Smartphone, CheckCircle, AlertCircle, Clock, Printer, Send, FileText, Layers } from "lucide-react";
 import { useCartStore } from "@/stores/cartStore";
 import { formatPEN } from "@/lib/utils";
@@ -56,6 +56,18 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
   const [splitEfectivo, setSplitEfectivo] = useState("");
   const [splitTarjeta,  setSplitTarjeta]  = useState("");
   const [splitYape,     setSplitYape]     = useState("");
+
+  // La serie sale de la base, no del código: cuando SUNAT deja inservible una
+  // serie se cambia la fila y la pantalla debe seguirla, no anunciar la vieja.
+  const [serie, setSerie] = useState<string | null>(null);
+  useEffect(() => {
+    let vigente = true;
+    fetch("/api/comprobantes/series")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => { if (vigente && s) setSerie(s[docType] ?? null); })
+      .catch(() => {}); // Es sólo la etiqueta: si falla, no se muestra y ya.
+    return () => { vigente = false; };
+  }, [docType]);
 
   const items = useCartStore((s) => s.items);
   const clearCart = useCartStore((s) => s.clearCart);
@@ -164,9 +176,9 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
         {/* Header */}
         <div className="flex items-center px-5 py-4 border-b border-border">
           <h2 className="font-semibold text-ink text-[16px]">{stepTitle[step]}</h2>
-          {step === "method" && (
+          {step === "method" && serie && (
             <span className="ml-3 text-[11px] px-2 py-0.5 rounded-full bg-surface-light text-ink-3 border border-border font-mono">
-              {docType === "FACTURA" ? "F001" : docType === "NOTA_VENTA" ? "NV001" : "B001"}
+              {serie}
             </span>
           )}
           <button onClick={onClose} className="ml-auto text-ink-3 hover:text-ink transition-colors">

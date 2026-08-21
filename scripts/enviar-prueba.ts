@@ -46,7 +46,10 @@ async function main() {
     { descripcion: "Luna Progresiva Digital 1.60 AR", cantidad: 2, importeConIgv: 236, codigoProducto: "LUN-PRG-160" },
   ]);
 
-  const serie = tipo === "FACTURA" ? "F001" : "B001";
+  // Cuarto argumento: la serie. No hay valor por defecto que sirva para siempre
+  // —una serie se abandona en cuanto SUNAT tiene números suyos informados— así
+  // que se pasa a mano y se elige mirando cuál está activa en DocumentSerie.
+  const serie = process.argv[4] ?? (tipo === "FACTURA" ? "F001" : "B002");
   const adquirente =
     tipo === "FACTURA"
       ? { docType: "RUC", docNumber: "20512345678", name: "EMPRESA DE PRUEBA S.A.C.", address: "AV. PRUEBA 123" }

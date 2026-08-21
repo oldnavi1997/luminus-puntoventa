@@ -8,7 +8,7 @@ import { enqueueDocument } from "@/lib/queue";
 import { emitirComprobante } from "@/lib/sunat/emitir";
 import { getLensLabel } from "@/lib/lens-tree";
 import { DocumentType, DocumentStatus } from "@/app/generated/prisma/client";
-import { formatCorrelativo } from "@/lib/sunat";
+import { reservarCorrelativo } from "@/lib/document-serie";
 
 // ─── GET: historial de ventas por fecha ──────────────────────────────────────
 
@@ -259,29 +259,16 @@ export async function POST(req: NextRequest) {
       const montoParaSesion = esAdelanto ? (data.montoAdelanto ?? 0) : totalConIGV;
       const cambio = data.montoRecibido ? Math.max(0, data.montoRecibido - totalConIGV) : null;
 
-      // 3. Obtener correlativo (SELECT FOR UPDATE)
+      // 3. Reservar correlativo de la serie activa
       const docTypeEnum = data.docType === "FACTURA"
         ? DocumentType.FACTURA
         : data.docType === "NOTA_VENTA"
           ? DocumentType.NOTA_VENTA
           : DocumentType.BOLETA;
-      const serie = data.docType === "FACTURA" ? "F001"
-        : data.docType === "NOTA_VENTA" ? "NV001"
-        : "B001";
-
-      const [serieRow] = await tx.$queryRaw<[{ lastNumber: number }]>`
-        SELECT "lastNumber" FROM "DocumentSerie"
-        WHERE type = ${docTypeEnum}::"DocumentType" AND serie = ${serie}
-        FOR UPDATE
-      `;
-
-      const nextNum = serieRow.lastNumber + 1;
-      await tx.documentSerie.update({
-        where: { type_serie: { type: docTypeEnum, serie } },
-        data: { lastNumber: nextNum },
-      });
-
-      const fullNumber = formatCorrelativo(serie, nextNum);
+      const { serie, correlativo: nextNum, fullNumber } = await reservarCorrelativo(
+        tx,
+        docTypeEnum,
+      );
 
       // 4. Crear SaleDocument
       const buyer = data.buyer ?? { docType: "DNI", docNumber: "00000000", name: "CLIENTE VARIOS" };
