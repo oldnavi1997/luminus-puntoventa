@@ -21,7 +21,9 @@ import {
   TipoEnvioSunat,
 } from "@/app/generated/prisma/client";
 import { getConfigSunat } from "./config";
-import { cargarCertificado, verificarVigencia, type CertificadoCargado } from "./certificado";
+import type { CertificadoCargado } from "./certificado";
+import { obtenerCertificado } from "./certificado-memo";
+import { ESTADOS_ACEPTADOS, estadoDocumentoPara } from "./estados";
 import { calcularComprobante, type LineaEntrada } from "./calculo";
 import { construirComprobante } from "./ubl/comprobante";
 import { extraerDigest, firmarComprobante } from "./firma";
@@ -46,49 +48,6 @@ export interface ResultadoEmision {
   estadoDocumento: DocumentStatus;
   /** true si conviene volver a intentarlo tal cual (cola de reintentos). */
   reintentable: boolean;
-}
-
-/**
- * Abrir el PKCS#12 cuesta, y el certificado no cambia entre ventas.
- * Se memoriza tras la primera emisión del proceso.
- */
-let certificadoMemorizado: CertificadoCargado | null = null;
-
-function obtenerCertificado(): CertificadoCargado {
-  if (!certificadoMemorizado) {
-    const config = getConfigSunat();
-    certificadoMemorizado = cargarCertificado(config.certificado.pfx, config.certificado.clave);
-  }
-  verificarVigencia(certificadoMemorizado);
-  return certificadoMemorizado;
-}
-
-/** Sólo para las pruebas. */
-export function _olvidarCertificado(): void {
-  certificadoMemorizado = null;
-}
-
-const ESTADOS_ACEPTADOS: EstadoEnvioSunat[] = [
-  EstadoEnvioSunat.ACEPTADO,
-  EstadoEnvioSunat.ACEPTADO_CON_OBSERVACIONES,
-];
-
-/** Estado del comprobante que corresponde a cada estado de envío. */
-function estadoDocumentoPara(estado: EstadoEnvioSunat): DocumentStatus {
-  switch (estado) {
-    case EstadoEnvioSunat.ACEPTADO:
-      return DocumentStatus.ACCEPTED;
-    case EstadoEnvioSunat.ACEPTADO_CON_OBSERVACIONES:
-      return DocumentStatus.ACCEPTED_WITH_OBSERVATIONS;
-    case EstadoEnvioSunat.RECHAZADO:
-      return DocumentStatus.REJECTED;
-    // Un fallo de transporte no dice nada del comprobante: queda PENDING para
-    // que la cola lo recoja, no REJECTED.
-    case EstadoEnvioSunat.ERROR_ENVIO:
-      return DocumentStatus.PENDING;
-    default:
-      return DocumentStatus.PENDING;
-  }
 }
 
 /**

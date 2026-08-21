@@ -27,23 +27,20 @@ import { formatearMonto, formatearUnitario, type ComprobanteCalculado } from "..
 import { numeroALetras } from "../../numero-letras";
 import type { ConfigSunat } from "../config";
 
-const NS = {
-  invoice: "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2",
-  cac: "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
-  cbc: "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
-  ccts: "urn:un:unece:uncefact:documentation:2",
-  ds: "http://www.w3.org/2000/09/xmldsig#",
-  ext: "urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2",
-  qdt: "urn:oasis:names:specification:ubl:schema:xsd:QualifiedDatatypes-2",
-  udt: "urn:un:unece:uncefact:data:specification:UnqualifiedDataTypesSchemaModule:2",
-  xsi: "http://www.w3.org/2001/XMLSchema-instance",
-} as const;
+import {
+  AGENCIA,
+  ID_FIRMA,
+  MONEDA,
+  NS,
+  bloqueFirma,
+  fechaLima,
+  horaLima,
+  huecoExtension,
+} from "./comun";
 
-const AGENCIA = "PE:SUNAT";
-const MONEDA = "PEN";
-
-/** Id del ds:Signature; cac:Signature debe apuntar aquí con "#". */
-export const ID_FIRMA = "SignatureLuminus";
+// Los tests y firma.ts lo importan desde aquí desde antes de que existiera
+// ubl/comun.ts; se re-exporta para no obligarles a cambiar de sitio.
+export { ID_FIRMA };
 
 export interface Adquirente {
   docType: string;
@@ -63,16 +60,6 @@ export interface ParametrosComprobante {
   config: ConfigSunat;
   /** Forma de pago. El POS cobra en mostrador, así que por defecto "Contado". */
   formaPago?: "Contado" | "Credito";
-}
-
-/** Fecha del día peruano, `YYYY-MM-DD`. */
-function fechaLima(d: Date): string {
-  return d.toLocaleDateString("en-CA", { timeZone: "America/Lima" });
-}
-
-/** Hora peruana, `HH:MM:SS`. */
-function horaLima(d: Date): string {
-  return d.toLocaleTimeString("en-GB", { timeZone: "America/Lima", hour12: false });
 }
 
 export function numeroComprobante(serie: string, correlativo: number): string {
@@ -101,7 +88,7 @@ export function construirComprobante(p: ParametrosComprobante): string {
     });
 
   // ── Hueco de la firma ──────────────────────────────────────────────────────
-  doc.ele("ext:UBLExtensions").ele("ext:UBLExtension").ele("ext:ExtensionContent").up().up().up();
+  huecoExtension(doc);
 
   // ── Cabecera ───────────────────────────────────────────────────────────────
   doc.ele("cbc:UBLVersionID").txt("2.1").up();
@@ -152,21 +139,7 @@ export function construirComprobante(p: ParametrosComprobante): string {
   doc.ele("cbc:LineCountNumeric").txt(String(calculo.lineas.length)).up();
 
   // ── Referencia a la firma ──────────────────────────────────────────────────
-  const firma = doc.ele("cac:Signature");
-  firma.ele("cbc:ID").txt(ID_FIRMA).up();
-  const signatory = firma.ele("cac:SignatoryParty");
-  signatory.ele("cac:PartyIdentification").ele("cbc:ID").txt(config.ruc).up().up();
-  signatory.ele("cac:PartyName").ele("cbc:Name").dat(config.razonSocial).up().up();
-  signatory.up();
-  firma
-    .ele("cac:DigitalSignatureAttachment")
-    .ele("cac:ExternalReference")
-    .ele("cbc:URI")
-    .txt(`#${ID_FIRMA}`)
-    .up()
-    .up()
-    .up();
-  firma.up();
+  bloqueFirma(doc, config);
 
   // ── Emisor ─────────────────────────────────────────────────────────────────
   //

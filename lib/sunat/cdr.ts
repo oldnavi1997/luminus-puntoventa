@@ -20,7 +20,10 @@ const parser = new XMLParser({
   ignoreAttributes: true,
   parseTagValue: false,
   removeNSPrefix: true,
-  isArray: (nombre) => nombre === "Note",
+  // `DocumentResponse` va forzado a array porque una RA/RC devuelve una
+  // respuesta por línea; con una sola llegaría como objeto y cada lectura
+  // tendría que distinguir los dos casos.
+  isArray: (nombre) => nombre === "Note" || nombre === "DocumentResponse",
 });
 
 export interface Cdr {
@@ -35,6 +38,23 @@ export interface Cdr {
   conObservaciones: boolean;
   /** El XML tal cual, para archivarlo. */
   xml: string;
+  /** `cbc:ID` de la raíz: identifica al CDR entero. */
+  idRespuesta: string | null;
+  /**
+   * Una entrada por `cac:DocumentResponse`. Un comprobante individual trae
+   * exactamente una; una comunicación de baja o un resumen traen una por línea.
+   */
+  lineas: CdrLinea[];
+}
+
+/** Respuesta de SUNAT sobre UN documento dentro del CDR. */
+export interface CdrLinea {
+  codigo: string;
+  descripcion: string;
+  /** `SERIE-NUMERO` del documento al que se refiere, tal cual lo manda SUNAT. */
+  referencia: string | null;
+  aceptado: boolean;
+  conObservaciones: boolean;
 }
 
 function texto(v: unknown): string {
@@ -56,34 +76,91 @@ export function leerCdr(xml: string): Cdr {
     throw new ErrorSunat("RESPUESTA_ILEGIBLE", "El CDR no es un XML válido.", {}, err);
   }
 
-  const documentResponse = raiz.DocumentResponse as Record<string, unknown> | undefined;
-  const response = documentResponse?.Response as Record<string, unknown> | undefined;
+  // Cada `cac:DocumentResponse` es la respuesta a UN documento. El
+  // comprobante individual trae una; la baja y el resumen, una por línea.
+  const respuestas = (raiz.DocumentResponse as Record<string, unknown>[] | undefined) ?? [];
 
-  if (!response) {
+  const lineas: CdrLinea[] = respuestas.flatMap((dr) => {
+    const response = dr.Response as Record<string, unknown> | undefined;
+    if (!response) return [];
+
+    const codigo = texto(response.ResponseCode);
+    const clasificacion = clasificarCodigoSunat(codigo);
+    const referenciaDoc = dr.DocumentReference as Record<string, unknown> | undefined;
+
+    return [
+      {
+        codigo,
+        descripcion: texto(response.Description),
+        referencia: referenciaDoc ? texto(referenciaDoc.ID) || null : null,
+        aceptado: clasificacion === "ACEPTADO" || clasificacion === "OBSERVADO",
+        conObservaciones: clasificacion === "OBSERVADO",
+      },
+    ];
+  });
+
+  if (lineas.length === 0) {
     throw new ErrorSunat(
       "RESPUESTA_ILEGIBLE",
       "El CDR no trae cac:DocumentResponse/cac:Response; no se puede saber si fue aceptado.",
     );
   }
 
-  const codigo = texto(response.ResponseCode);
-  const descripcion = texto(response.Description);
-
   const notas = (raiz.Note as unknown[] | undefined) ?? [];
   const observaciones = notas.map(texto).filter((n) => n !== "");
 
-  const referenciaDoc = documentResponse?.DocumentReference as Record<string, unknown> | undefined;
-  const clasificacion = clasificarCodigoSunat(codigo);
+  // Los campos de cabecera siguen siendo los de la primera respuesta, que en
+  // un comprobante individual es la única: así `emitir.ts` no se entera de
+  // que esto ahora sabe leer varias.
+  const principal = lineas[0];
 
   return {
-    codigo,
-    descripcion,
+    codigo: principal.codigo,
+    descripcion: principal.descripcion,
     observaciones,
-    referencia: referenciaDoc ? texto(referenciaDoc.ID) || null : null,
-    aceptado: clasificacion === "ACEPTADO" || clasificacion === "OBSERVADO",
-    conObservaciones: clasificacion === "OBSERVADO" || observaciones.length > 0,
+    referencia: principal.referencia,
+    aceptado: principal.aceptado,
+    conObservaciones: principal.conObservaciones || observaciones.length > 0,
     xml,
+    idRespuesta: texto(raiz.ID) || null,
+    lineas,
   };
+}
+
+/**
+ * Deja "B001-00000053" y "B001-53" en la misma forma.
+ *
+ * SUNAT no siempre devuelve la referencia con los ceros de relleno con que se
+ * envió, así que comparar las cadenas tal cual falla justo cuando importa.
+ */
+function normalizarReferencia(v: string): string {
+  const limpio = v.trim().toUpperCase();
+  const corte = limpio.lastIndexOf("-");
+  if (corte < 0) return limpio;
+
+  const serie = limpio.slice(0, corte);
+  const numero = limpio.slice(corte + 1);
+  return /^[0-9]+$/.test(numero) ? `${serie}-${Number(numero)}` : limpio;
+}
+
+/**
+ * La respuesta que corresponde a un comprobante concreto dentro del CDR.
+ *
+ * Devuelve `null` en vez de adivinar cuando hay varias líneas y ninguna casa:
+ * dar por buena la primera marcaría un documento como anulado con la respuesta
+ * de otro.
+ */
+export function lineaPara(cdr: Cdr, fullNumber: string): CdrLinea | null {
+  const buscado = normalizarReferencia(fullNumber);
+
+  const encontrada = cdr.lineas.find(
+    (l) => l.referencia !== null && normalizarReferencia(l.referencia) === buscado,
+  );
+  if (encontrada) return encontrada;
+
+  // Con un documento por RA/RC no hay ambigüedad posible, y SUNAT no siempre
+  // repite la referencia en la respuesta.
+  return cdr.lineas.length === 1 ? cdr.lineas[0] : null;
 }
 
 /**
