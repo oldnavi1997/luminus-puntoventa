@@ -23,7 +23,9 @@ import {
   DocumentStatus,
   EstadoEnvioSunat,
   TipoEnvioSunat,
+  type Prisma,
 } from "@/app/generated/prisma/client";
+import { documentoConElMovimiento, revertirStockYCaja } from "@/lib/reversion-venta";
 import { getConfigSunat } from "./config";
 import { getStatus, type EstadoTicket } from "./cliente-soap";
 import { extraerCdr } from "./empaquetado";
@@ -282,16 +284,14 @@ async function aplicarVeredicto(
     : EstadoEnvioSunat.RECHAZADO;
 
   const documentIds = fila.envios.map((e) => e.documentId);
-  const estadosFinales = aceptado
-    ? documentIds.map(() => DocumentStatus.VOIDED)
-    : await Promise.all(documentIds.map((id) => estadoPrevio(id)));
-
   const { cdrXml } = veredicto;
 
   // Todo junto: el ticket es de un solo uso, así que si el CDR no se guarda
-  // ahora no hay forma de volver a pedirlo.
-  await prisma.$transaction([
-    prisma.sunatTicket.update({
+  // ahora no hay forma de volver a pedirlo. Y la reversión va aquí dentro, no
+  // después: dejar el stock devuelto con el comprobante todavía vigente sería
+  // peor que no revertir.
+  await prisma.$transaction(async (tx) => {
+    await tx.sunatTicket.update({
       where: { id: fila.id },
       data: {
         estado: estadoEnvio,
@@ -301,9 +301,10 @@ async function aplicarVeredicto(
         intentos: { increment: 1 },
         resueltoAt: new Date(),
       },
-    }),
-    ...fila.envios.map((envio) =>
-      prisma.sunatEnvio.update({
+    });
+
+    for (const envio of fila.envios) {
+      await tx.sunatEnvio.update({
         where: { id: envio.id },
         data: {
           estado: estadoEnvio,
@@ -313,21 +314,77 @@ async function aplicarVeredicto(
           observaciones: veredicto.clase === "ACEPTADO" ? veredicto.observaciones : [],
           respondidoAt: new Date(),
         },
-      }),
-    ),
-    ...documentIds.map((id, i) =>
-      prisma.saleDocument.update({
-        where: { id },
-        data: {
-          status: estadosFinales[i],
-          ...(aceptado
-            ? { voidedAt: new Date(), voidCdrCode: veredicto.codigo }
-            : { sunatCdrDesc: `Baja rechazada (${veredicto.codigo}): ${veredicto.descripcion}`.slice(0, 500) }),
-        },
-      }),
-    ),
-  ]);
+      });
+    }
+
+    for (const documentId of documentIds) {
+      if (aceptado) {
+        await deshacerVenta(tx, documentId, veredicto.codigo);
+      } else {
+        await tx.saleDocument.update({
+          where: { id: documentId },
+          data: {
+            status: await estadoPrevio(documentId),
+            sunatCdrDesc: `Baja rechazada (${veredicto.codigo}): ${veredicto.descripcion}`.slice(0, 500),
+          },
+        });
+      }
+    }
+  });
 
   if (aceptado) resultado.anulados += documentIds.length;
   else resultado.rechazados += documentIds.length;
+}
+
+/**
+ * SUNAT aceptó la baja: se deshace la venta entera.
+ *
+ * Anular no es sólo marcar el comprobante. El stock vuelve y la caja se
+ * descuenta, y si el comprobante nació de convertir una nota de venta, la nota
+ * se anula con él: el movimiento era suyo, así que dejarla viva la haría
+ * reclamar un stock que ya volvió y volvería a ofrecerla para convertir.
+ */
+async function deshacerVenta(
+  tx: Prisma.TransactionClient,
+  documentId: string,
+  codigoCdr: string,
+): Promise<void> {
+  const comprobante = await tx.saleDocument.findUnique({
+    where: { id: documentId },
+    select: { id: true, notes: true, voidReason: true },
+  });
+  if (!comprobante) return;
+
+  const conMovimiento = await documentoConElMovimiento(tx, comprobante);
+
+  if (conMovimiento) {
+    const venta = await tx.saleDocument.findUnique({
+      where: { id: conMovimiento.id },
+      include: {
+        items: {
+          select: { productId: true, quantity: true, product: { select: { trackInventory: true } } },
+        },
+      },
+    });
+
+    if (venta) {
+      await revertirStockYCaja(tx, venta);
+
+      if (conMovimiento.esOrigen) {
+        await tx.saleDocument.update({
+          where: { id: venta.id },
+          data: {
+            status: DocumentStatus.VOIDED,
+            voidedAt: new Date(),
+            voidReason: comprobante.voidReason,
+          },
+        });
+      }
+    }
+  }
+
+  await tx.saleDocument.update({
+    where: { id: documentId },
+    data: { status: DocumentStatus.VOIDED, voidedAt: new Date(), voidCdrCode: codigoCdr },
+  });
 }

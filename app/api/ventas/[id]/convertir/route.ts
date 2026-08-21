@@ -40,6 +40,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Solo se pueden convertir Notas de Venta" }, { status: 400 });
   }
 
+  // Anular un comprobante deshace la venta entera y arrastra a VOIDED la nota
+  // de la que salió. Sin esto, esa nota —que ya devolvió su stock y su dinero—
+  // se podría volver a convertir por API y declararía ante SUNAT una venta que
+  // ya no existe. La pantalla de Convertir no la ofrece, pero la ruta es
+  // llamable igual.
+  if (original.status !== DocumentStatus.ACCEPTED) {
+    return NextResponse.json(
+      {
+        error:
+          `${original.fullNumber} está en ${original.status} y no se puede convertir. ` +
+          "Sólo se convierten notas de venta vigentes.",
+      },
+      { status: 409 },
+    );
+  }
+
   // Una venta se declara UNA vez. Sin esta comprobación la misma nota se podía
   // convertir indefinidamente: NV001-00000251 llegó a tener cuatro comprobantes,
   // y el último aceptado por SUNAT.

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { marcaDeConversion, naceDeConversion, origenDeConversion } from "@/lib/conversion";
+import { revertirStockYCaja } from "@/lib/reversion-venta";
 import { Prisma } from "@/app/generated/prisma/client";
 import { z } from "zod";
 import { validarDocumento, TIPOS_DOCUMENTO } from "@/lib/documento";
@@ -150,49 +151,11 @@ export async function DELETE(
   const esConversion = naceDeConversion(doc.notes);
 
   await prisma.$transaction(async (tx) => {
-    // Restaurar stock
-    for (const item of esConversion ? [] : doc.items) {
-      if (!item.product.trackInventory) continue;
-      if (doc.location === "ALMACEN") {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stockAlmacen: { increment: item.quantity }, stock: { increment: item.quantity } },
-        });
-      } else {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stockTienda: { increment: item.quantity }, stock: { increment: item.quantity } },
-        });
-      }
-    }
-
-    // Revertir totales de la sesión si el documento está vinculado a una
-    if (doc.posSessionId && !esConversion) {
-      // Para ventas con adelanto (PARTIAL): solo se registró el adelanto en sesión
-      // Para el resto: se registró el total completo
-      const montoRegistrado = doc.montoAdelanto != null
-        ? Number(doc.montoAdelanto)
-        : Number(doc.total);
-
-      const sessionDecrement: Record<string, unknown> = {
-        totalVentas: { decrement: montoRegistrado },
-        countVentas: { decrement: 1 },
-      };
-      if (doc.paymentMethod === "MIXTO") {
-        if (Number(doc.montoEfectivo) > 0) sessionDecrement.totalEfectivo = { decrement: Number(doc.montoEfectivo) };
-        if (Number(doc.montoTarjeta)  > 0) sessionDecrement.totalTarjeta  = { decrement: Number(doc.montoTarjeta)  };
-        if (Number(doc.montoYape)     > 0) sessionDecrement.totalYape     = { decrement: Number(doc.montoYape)     };
-      } else {
-        if (doc.paymentMethod === "EFECTIVO") sessionDecrement.totalEfectivo = { decrement: montoRegistrado };
-        if (doc.paymentMethod === "TARJETA")  sessionDecrement.totalTarjeta  = { decrement: montoRegistrado };
-        if (doc.paymentMethod === "YAPE")     sessionDecrement.totalYape     = { decrement: montoRegistrado };
-      }
-
-      await tx.posSession.update({
-        where: { id: doc.posSessionId },
-        data: sessionDecrement,
-      });
-    }
+    // Al borrar, una conversión no revierte nada y punto: la nota de venta
+    // original sigue existiendo y conserva su movimiento. (Al ANULAR es
+    // distinto: allí se revierte contra la nota, porque se deshace la venta
+    // entera. Ver `documentoConElMovimiento`.)
+    if (!esConversion) await revertirStockYCaja(tx, doc);
 
     await tx.saleDocument.delete({ where: { id } });
   });
