@@ -3,7 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { formatCorrelativo } from "@/lib/sunat";
+import { reservarCorrelativo } from "@/lib/document-serie";
+import { marcaDeConversion, prefijoDeConversion } from "@/lib/conversion";
 import { enqueueDocument } from "@/lib/queue";
 import { emitirComprobante } from "@/lib/sunat/emitir";
 import { DocumentType, DocumentStatus } from "@/app/generated/prisma/client";
@@ -39,21 +40,48 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Solo se pueden convertir Notas de Venta" }, { status: 400 });
   }
 
-  const docTypeEnum = docType === "FACTURA" ? DocumentType.FACTURA : DocumentType.BOLETA;
-  const serie = docType === "FACTURA" ? "F001" : "B001";
+  // Una venta se declara UNA vez. Sin esta comprobación la misma nota se podía
+  // convertir indefinidamente: NV001-00000251 llegó a tener cuatro comprobantes,
+  // y el último aceptado por SUNAT.
+  //
+  // El rechazado es la excepción y el motivo de que esto no sea un simple "ya
+  // se convirtió": ese comprobante no vale nada y la venta sigue necesitando uno
+  // válido, así que volver a convertir es justo la salida.
+  const previas = await prisma.saleDocument.findMany({
+    where: { notes: { startsWith: prefijoDeConversion(original.fullNumber) } },
+    select: { fullNumber: true, status: true },
+  });
+  const viva = previas.find((d) => d.status !== DocumentStatus.REJECTED);
 
+  if (viva) {
+    // Un SEND_ERROR o un PENDING conservan su correlativo, así que lo que toca
+    // es reintentar ese comprobante. Convertir otra vez pediría un número nuevo
+    // y dejaría el anterior quemado para nada.
+    const recuperable =
+      viva.status === DocumentStatus.PENDING ||
+      viva.status === DocumentStatus.SEND_ERROR ||
+      viva.status === DocumentStatus.DRAFT;
+
+    return NextResponse.json(
+      {
+        error: recuperable
+          ? `${original.fullNumber} ya tiene el comprobante ${viva.fullNumber}, pendiente de ` +
+            "enviarse. Reintenta ese desde Comprobantes en vez de convertir otra vez: su " +
+            "correlativo sigue siendo válido y crear uno nuevo lo quemaría."
+          : `${original.fullNumber} ya se convirtió en ${viva.fullNumber}. Convertirla de nuevo ` +
+            "declararía la misma venta dos veces ante SUNAT.",
+        comprobante: viva.fullNumber,
+      },
+      { status: 409 },
+    );
+  }
+
+  const docTypeEnum = docType === "FACTURA" ? DocumentType.FACTURA : DocumentType.BOLETA;
   const newDoc = await prisma.$transaction(async (tx) => {
-    const [serieRow] = await tx.$queryRaw<[{ lastNumber: number }]>`
-      SELECT "lastNumber" FROM "DocumentSerie"
-      WHERE type = ${docTypeEnum}::"DocumentType" AND serie = ${serie}
-      FOR UPDATE
-    `;
-    const nextNum = serieRow.lastNumber + 1;
-    await tx.documentSerie.update({
-      where: { type_serie: { type: docTypeEnum, serie } },
-      data: { lastNumber: nextNum },
-    });
-    const fullNumber = formatCorrelativo(serie, nextNum);
+    const { serie, correlativo: nextNum, fullNumber } = await reservarCorrelativo(
+      tx,
+      docTypeEnum,
+    );
 
     return tx.saleDocument.create({
       data: {
@@ -74,6 +102,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         paymentMethod: original.paymentMethod,
         montoRecibido: original.montoRecibido,
         cambio: original.cambio,
+        // El stock y la caja ya los movió la nota de venta; la marca impide que
+        // borrar este comprobante los revierta por segunda vez.
+        notes: marcaDeConversion(original.fullNumber, original.notes),
         status: DocumentStatus.DRAFT,
         items: {
           create: original.items.map((item) => ({

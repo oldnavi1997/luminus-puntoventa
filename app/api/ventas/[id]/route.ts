@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { marcaDeConversion, naceDeConversion, origenDeConversion } from "@/lib/conversion";
 import { Prisma } from "@/app/generated/prisma/client";
 import { z } from "zod";
 import { validarDocumento, TIPOS_DOCUMENTO } from "@/lib/documento";
@@ -59,6 +60,18 @@ export async function PATCH(
   // de resolucion automatica del Historial no la pise despues.
   const tocaComprador = tocaDocumento || parsed.data.buyerName !== undefined;
 
+  // La marca de conversión vive dentro de `notes` por no poder añadir una columna
+  // al schema del ecommerce. Guardar aquí el texto crudo la borraría, y con ella
+  // se perdería lo que impide convertir la venta dos veces y revertir stock que
+  // nunca salió. La nota del usuario se conserva detrás de la marca.
+  const origen = origenDeConversion(doc.notes);
+  const notasNuevas =
+    parsed.data.notes === undefined
+      ? undefined
+      : origen
+        ? marcaDeConversion(origen, parsed.data.notes)
+        : parsed.data.notes || null;
+
   const updated = await prisma.saleDocument.update({
     where: { id },
     data: {
@@ -69,7 +82,7 @@ export async function PATCH(
         buyerDocNumber: parsed.data.buyerDocNumber.trim(),
       }),
       ...(tocaComprador && { buyerResolvedAt: new Date() }),
-      ...(parsed.data.notes !== undefined && { notes: parsed.data.notes || null }),
+      ...(notasNuevas !== undefined && { notes: notasNuevas }),
       ...(parsed.data.prescription !== undefined && {
         prescription: parsed.data.prescription === null ? Prisma.JsonNull : parsed.data.prescription,
       }),
@@ -115,9 +128,30 @@ export async function DELETE(
     );
   }
 
+  // Un comprobante que ya salió hacia SUNAT no se borra. La fila de SunatEnvio
+  // guarda el XML firmado y el CDR —la prueba documental de lo que se envió— y
+  // el correlativo queda tomado pase lo que pase, así que borrarlo no devuelve
+  // el número ni deshace nada del lado de SUNAT: sólo destruye la evidencia.
+  const envios = await prisma.sunatEnvio.count({ where: { documentId: id } });
+  if (envios > 0) {
+    return NextResponse.json(
+      {
+        error:
+          `${doc.fullNumber} ya se envió a SUNAT y no se puede eliminar. El correlativo está ` +
+          "tomado y el envío tiene que quedar registrado. Si fue rechazado, emite uno nuevo.",
+      },
+      { status: 409 }
+    );
+  }
+
+  // Convertir no descuenta stock ni suma a la caja: eso lo hizo la nota de venta
+  // original. Revertir aquí acreditaría unidades que nunca salieron y restaría
+  // de la sesión un dinero que nunca se le sumó.
+  const esConversion = naceDeConversion(doc.notes);
+
   await prisma.$transaction(async (tx) => {
     // Restaurar stock
-    for (const item of doc.items) {
+    for (const item of esConversion ? [] : doc.items) {
       if (!item.product.trackInventory) continue;
       if (doc.location === "ALMACEN") {
         await tx.product.update({
@@ -133,7 +167,7 @@ export async function DELETE(
     }
 
     // Revertir totales de la sesión si el documento está vinculado a una
-    if (doc.posSessionId) {
+    if (doc.posSessionId && !esConversion) {
       // Para ventas con adelanto (PARTIAL): solo se registró el adelanto en sesión
       // Para el resto: se registró el total completo
       const montoRegistrado = doc.montoAdelanto != null
@@ -163,5 +197,5 @@ export async function DELETE(
     await tx.saleDocument.delete({ where: { id } });
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, revirtio: !esConversion });
 }

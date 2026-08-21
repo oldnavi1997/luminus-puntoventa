@@ -229,7 +229,7 @@ export function ConvertirView() {
 
   const fetchDocs = useCallback(async () => {
     setLoading(true);
-    const res  = await fetch("/api/comprobantes?type=NOTA_VENTA&status=ACCEPTED&limit=200");
+    const res  = await fetch("/api/ventas/convertibles?limit=200");
     const json = await res.json();
     setDocs(json.docs ?? []);
     setLoading(false);
