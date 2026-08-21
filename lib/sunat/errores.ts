@@ -93,9 +93,12 @@ export function clasificarCodigoSunat(codigo: string): CodigoErrorSunat | "ACEPT
   return "XML_INVALIDO";
 }
 
-/** ¿El código indica que el comprobante ya estaba registrado antes? */
+/** ¿El código indica que ese serie-correlativo ya está tomado en SUNAT? */
 export function esDuplicado(codigo: string): boolean {
-  // 1033: "El comprobante fue registrado previamente con otros datos"
+  // 1032: "ya esta informado y se encuentra con estado anulado o rechazado".
+  //       Un comprobante dado de baja ocupa el número igual que uno vigente:
+  //       el correlativo no vuelve a quedar libre nunca.
+  // 1033: "fue registrado previamente con otros datos".
   // 2109 / 2113: numeración ya usada.
-  return ["1033", "2109", "2113"].includes(codigo);
+  return ["1032", "1033", "2109", "2113"].includes(codigo);
 }

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { emitirComprobante } from "@/lib/sunat/emitir";
+import { esDuplicado } from "@/lib/sunat/errores";
 
 /**
  * Reemite un comprobante que quedó en SEND_ERROR o PENDING.
@@ -27,7 +28,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
   const doc = await prisma.saleDocument.findUnique({
     where: { id },
-    select: { id: true, type: true, status: true, fullNumber: true },
+    select: { id: true, type: true, status: true, fullNumber: true, sunatCdrCode: true },
   });
 
   if (!doc) return NextResponse.json({ error: "Comprobante no encontrado" }, { status: 404 });
@@ -41,10 +42,18 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const reemitibles = ["SEND_ERROR", "PENDING", "DRAFT"];
   if (!reemitibles.includes(doc.status)) {
+    // Un duplicado no es un rechazo de contenido: los datos pueden estar
+    // perfectos y el problema ser sólo que ese número ya está tomado. Decir
+    // "corrige los datos" manda a revisar el sitio equivocado.
+    const duplicado = doc.status === "REJECTED" && esDuplicado(doc.sunatCdrCode ?? "");
+
     return NextResponse.json(
       {
-        error:
-          doc.status === "REJECTED"
+        error: duplicado
+          ? `SUNAT ya tiene tomado el número ${doc.fullNumber} (${doc.sunatCdrCode}). Ese correlativo ` +
+            "está quemado y no se libera ni dándolo de baja: emite de nuevo, que saldrá con el " +
+            "siguiente número de la serie."
+          : doc.status === "REJECTED"
             ? "SUNAT rechazó este comprobante tras evaluarlo. Reenviarlo daría el mismo rechazo: hay que corregir los datos y emitir uno nuevo."
             : `El comprobante está en ${doc.status} y no necesita reemitirse.`,
       },

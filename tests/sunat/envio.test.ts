@@ -101,7 +101,18 @@ describe("lectura del CDR", () => {
 
     expect(err.codigo).toBe("DUPLICADO");
     expect(err.reintentable).toBe(false);
-    expect(err.message).toMatch(/No lo reenvíes/);
+    expect(err.message).toMatch(/correlativo está quemado/);
+  });
+
+  // 1032 llegó tarde a esta lista y costó dos correlativos: se clasificaba como
+  // un rechazo de contenido, que manda a revisar los datos del comprobante
+  // cuando lo único que pasa es que el número ya está tomado.
+  it("trata como duplicado un número dado de baja (1032)", () => {
+    const cdr = leerCdr(cdrXml("1032", "El comprobante B001-52 fue anulado"));
+    const err = errorDesdeCdr(cdr)!;
+
+    expect(err.codigo).toBe("DUPLICADO");
+    expect(err.reintentable).toBe(false);
   });
 
   it("falla si el CDR no trae la respuesta", () => {

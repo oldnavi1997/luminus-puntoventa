@@ -98,8 +98,9 @@ export function errorDesdeCdr(cdr: Cdr): ErrorSunat | null {
   if (esDuplicado(cdr.codigo)) {
     return new ErrorSunat(
       "DUPLICADO",
-      `SUNAT ya tenía registrado este comprobante (${cdr.codigo}): ${cdr.descripcion}. ` +
-        "No lo reenvíes: consulta su estado en vez de emitir otro.",
+      `SUNAT ya tiene ese número tomado (${cdr.codigo}): ${cdr.descripcion}. ` +
+        "Reenviarlo daría lo mismo: el correlativo está quemado y hay que emitir " +
+        "con el siguiente número libre de la serie.",
       detalle,
     );
   }
