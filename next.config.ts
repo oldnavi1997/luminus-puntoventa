@@ -7,7 +7,9 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "images.unsplash.com" },
     ],
   },
-  serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "bcryptjs"],
+  // pdfkit lee sus métricas de fuente (.afm) del disco con fs.readFileSync, así
+  // que tiene que quedar como require externo en vez de empaquetarse.
+  serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "bcryptjs", "pdfkit"],
 };
 
 export default nextConfig;
