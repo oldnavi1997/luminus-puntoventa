@@ -41,3 +41,6 @@ app/generated/
 certs/
 certificados/
 .sunat-pruebas/
+
+# Credenciales de PRODUCCION de SUNAT, solo para consultar-serie.ts
+.env.sunat-prod

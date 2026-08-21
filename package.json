@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "sunat:cert": "tsx --env-file=.env.local scripts/diagnostico-certificado.ts",
     "sunat:b64": "tsx --env-file=.env.local scripts/certificado-base64.ts",
-    "sunat:enviar": "tsx --env-file=.env.local scripts/enviar-prueba.ts"
+    "sunat:enviar": "tsx --env-file=.env.local scripts/enviar-prueba.ts",
+    "sunat:serie": "tsx --env-file=.env.sunat-prod scripts/consultar-serie.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

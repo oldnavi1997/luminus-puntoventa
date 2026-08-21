@@ -9,6 +9,7 @@
  *   sendBill(nombre, zipB64)     facturas y notas → CDR en la misma respuesta
  *   sendSummary(nombre, zipB64)  resúmenes y bajas → devuelve un ticket
  *   getStatus(ticket)            recoge el CDR de un ticket
+ *   consultarComprobante(...)    si un serie-correlativo ya está tomado
  *
  * La contraseña SOL viaja en el sobre; por eso nada de esto puede registrarse
  * en logs tal cual (ver `escaparXml` y el manejo de errores).
@@ -57,11 +58,17 @@ function sobre(config: ConfigSunat, cuerpo: string): string {
   );
 }
 
-async function llamar(config: ConfigSunat, accion: string, cuerpo: string): Promise<Record<string, unknown>> {
+async function llamar(
+  config: ConfigSunat,
+  accion: string,
+  cuerpo: string,
+  // La consulta por serie-correlativo no vive en el mismo servicio que el envío.
+  endpoint: string = config.endpoints.comprobantes,
+): Promise<Record<string, unknown>> {
   let respuesta: Response;
 
   try {
-    respuesta = await fetch(config.endpoints.comprobantes, {
+    respuesta = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "text/xml; charset=utf-8",
@@ -205,5 +212,63 @@ export async function getStatus(config: ConfigSunat, ticket: string): Promise<Es
     cdrBase64: typeof contenido === "string" && contenido !== "" ? contenido : null,
     // 98 = "en proceso": hay que volver a preguntar más tarde, no es un error.
     enProceso: codigo === "98",
+  };
+}
+
+export interface EstadoComprobante {
+  /** Código que devuelve SUNAT tal cual; su significado va en `mensaje`. */
+  codigo: string;
+  mensaje: string;
+  /** true si SUNAT reconoce ese serie-correlativo, aceptado o dado de baja. */
+  existe: boolean;
+}
+
+/**
+ * Pregunta a SUNAT si un serie-correlativo ya está tomado.
+ *
+ * Existe porque la alternativa es averiguarlo emitiendo, y cada intento contra
+ * un número ya informado lo quema para siempre (1032/1033). Cuando una serie
+ * viene de un sistema anterior no hay forma de saber dónde quedó, y adivinar de
+ * uno en uno cuesta un correlativo por intento.
+ *
+ * Va contra `billConsultService`, no contra el de envío, y el usuario SOL
+ * necesita además el permiso de consultar validez de CPE.
+ *
+ * Los códigos no se interpretan aquí a propósito: SUNAT los ha cambiado de
+ * significado entre revisiones y el texto de `statusMessage` es lo único
+ * estable. Sólo se distingue "no existe" de todo lo demás.
+ */
+export async function consultarComprobante(
+  config: ConfigSunat,
+  comprobante: { tipo: string; serie: string; numero: number },
+): Promise<EstadoComprobante> {
+  const body = await llamar(
+    config,
+    "getStatus",
+    `<ser:getStatus>` +
+      `<rucComprobante>${escaparXml(config.ruc)}</rucComprobante>` +
+      `<tipoComprobante>${escaparXml(comprobante.tipo)}</tipoComprobante>` +
+      `<serieComprobante>${escaparXml(comprobante.serie)}</serieComprobante>` +
+      `<numeroComprobante>${comprobante.numero}</numeroComprobante>` +
+      `</ser:getStatus>`,
+    config.endpoints.consultaCdr,
+  );
+
+  const respuesta = body.getStatusResponse as Record<string, unknown> | undefined;
+  const status = respuesta?.status as Record<string, unknown> | undefined;
+
+  if (!status) {
+    throw new ErrorSunat("RESPUESTA_ILEGIBLE", "SUNAT no devolvió el estado del comprobante.");
+  }
+
+  const codigo = String(status.statusCode ?? "");
+  const mensaje = String(status.statusMessage ?? "");
+
+  return {
+    codigo,
+    mensaje,
+    // "No existe" es lo único que hace libre un correlativo. Cualquier otra
+    // respuesta —aceptado, anulado, rechazado— significa que está tomado.
+    existe: !/no existe|no se encuentra|no ha sido informado/i.test(mensaje),
   };
 }
