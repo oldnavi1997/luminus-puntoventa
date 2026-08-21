@@ -10,6 +10,8 @@ import {
   whereConStock,
   ORIGEN_DE,
   ORIGEN_LABEL,
+  esCarreraDeStock,
+  esFalloDeMovimiento,
 } from "@/lib/stock-movimiento";
 
 // Historial de movimientos. Mismo 403 que el POST: el módulo entero es de ADMIN.
@@ -114,10 +116,10 @@ export async function POST(req: NextRequest) {
             where: whereConStock(item.productId, tipo, item.cantidad),
             data: dataDe(tipo, item.cantidad),
           });
-        } catch (e: any) {
+        } catch (e) {
           // El where con la condición de stock no matcheó: otro movimiento se
           // llevó las unidades entre la lectura de arriba y este update.
-          if (e?.code === "P2025" && origen) {
+          if (esCarreraDeStock(e) && origen) {
             throw {
               status: 409,
               message: `Otro movimiento tomó el stock de "${product.name}" mientras se registraba este. Volvé a intentar.`,
@@ -141,8 +143,8 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ ok: true, count: parsed.length });
-  } catch (e: any) {
-    if (e?.status) return NextResponse.json({ error: e.message }, { status: e.status });
+  } catch (e) {
+    if (esFalloDeMovimiento(e)) return NextResponse.json({ error: e.message }, { status: e.status });
     return NextResponse.json({ error: "No se pudo registrar el movimiento" }, { status: 500 });
   }
 }

@@ -8,6 +8,8 @@ import {
   whereConStock,
   ORIGEN_DE,
   ORIGEN_LABEL,
+  esCarreraDeStock,
+  esFalloDeMovimiento,
 } from "@/lib/stock-movimiento";
 
 export async function POST(
@@ -53,8 +55,8 @@ export async function POST(
           where: whereConStock(id, tipo, cant),
           data: dataDe(tipo, cant),
         });
-      } catch (e: any) {
-        if (e?.code === "P2025" && origen) {
+      } catch (e) {
+        if (esCarreraDeStock(e) && origen) {
           throw {
             status: 409,
             message: "Otro movimiento tomó el stock mientras se registraba este. Volvé a intentar.",
@@ -85,8 +87,8 @@ export async function POST(
         storePrice: result.storePrice != null ? Number(result.storePrice) : null,
       },
     });
-  } catch (e: any) {
-    if (e?.status) return NextResponse.json({ error: e.message }, { status: e.status });
+  } catch (e) {
+    if (esFalloDeMovimiento(e)) return NextResponse.json({ error: e.message }, { status: e.status });
     return NextResponse.json({ error: "No se pudo registrar el movimiento" }, { status: 500 });
   }
 }

@@ -69,7 +69,7 @@ export function CustomerPanel() {
       {notFound && (
         <div className="flex items-center gap-1.5 text-[10px] text-warning">
           <UserX size={12} />
-          <span>No encontrado — se emitirá como "Cliente Varios"</span>
+          <span>No encontrado — se emitirá como &laquo;Cliente Varios&raquo;</span>
         </div>
       )}
     </div>

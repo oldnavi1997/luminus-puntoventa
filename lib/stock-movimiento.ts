@@ -79,3 +79,29 @@ export function whereConStock(
   if (tipo === "RETORNO")  return { id, stockTienda:  { gte: cantidad } };
   return { id };
 }
+
+/**
+ * P2025 es lo que devuelve Prisma cuando el `where` de arriba no matcheó: entre
+ * la lectura del producto y el update, otro movimiento se llevó las unidades.
+ * No es un error a propagar, es la carrera que `whereConStock` existe para
+ * detectar.
+ */
+export function esCarreraDeStock(e: unknown): boolean {
+  return typeof e === "object" && e !== null && (e as { code?: unknown }).code === "P2025";
+}
+
+/**
+ * Las rutas de movimiento abortan la transacción lanzando la respuesta HTTP que
+ * les toca, para que el rollback y el mensaje salgan del mismo sitio. Esto lo
+ * reconoce al recogerlo, sin tener que tipar el catch como `any`.
+ */
+export interface FalloDeMovimiento {
+  status: number;
+  message: string;
+}
+
+export function esFalloDeMovimiento(e: unknown): e is FalloDeMovimiento {
+  if (typeof e !== "object" || e === null) return false;
+  const posible = e as { status?: unknown; message?: unknown };
+  return typeof posible.status === "number" && typeof posible.message === "string";
+}
