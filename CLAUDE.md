@@ -59,6 +59,7 @@ No test suite is configured.
 - `app/(auth)/login/` — Unauthenticated login page
 - `app/(pos)/sesion/` — Open/close POS cash register session (requires auth but no active session)
 - `app/(pos)/(requires-session)/` — All POS pages; middleware enforces an open `PosSession`
+- `app/(pos)/(requires-session)/anulados/` — ADMIN-only history of voided sales
 
 The session gate is enforced in middleware: users without an active `PosSession` are redirected to `/sesion` to open one before accessing `/pos`, `/caja`, `/inventario`, etc.
 
@@ -180,15 +181,47 @@ set it to `0`.
 - Both tickets resolved on the first poll, ~3 s after sending. `98` (in process) exists
   and has to be handled, but the common case is fast.
 
-**Not implemented yet:** voiding. `app/api/ventas/[id]/anular` returns **501** for
-self-emitted documents — ApiSunat cannot void what it never issued, and letting it
-try would mark the document `VOIDED` locally while SUNAT still considers it valid.
-Needs comunicación de baja (facturas) and resumen de anulación (boletas).
+**Voiding.** A factura is voided with a **comunicación de baja** (`RA`,
+`ubl/baja.ts`) and a boleta with a **resumen de anulación** (`RC` with
+`cac:Status/cbc:ConditionCode = 3`, `ubl/resumen.ts`). `anular.ts` orchestrates it the
+way `emitir.ts` orchestrates emission — validate before writing anything, record before
+sending — but it ends differently: `sendSummary` returns a **ticket**, not a CDR, so the
+document is left in `VOID_PENDING`, the route answers **202**, and `tickets.ts` closes it
+when SUNAT replies.
+
+Four things about it that are not obvious:
+
+- **Voiding undoes the whole sale.** The stock goes back, the cash session is debited and,
+  if the comprobante came from converting a nota de venta, the nota is voided with it. In
+  the usual POS flow the movement belongs to the *nota* — converting deducts nothing — so
+  `documentoConElMovimiento` decides which of the two to revert against. Reverting against
+  the comprobante would return nothing; reverting without touching the nota would leave it
+  claiming stock that already came back.
+- **The reversal only happens once SUNAT confirms**, inside the same transaction that marks
+  the document `VOIDED`. Reverting when the baja is *requested* and having it rejected would
+  need a compensating write that can fail too.
+- **The daily correlativo of RA/RC is the `SunatTicket` table itself**, through its
+  `@@unique([tipo, fechaReferencia, correlativo])` — the same space SUNAT makes unique. The
+  number lives *inside* the signed XML, so a collision means rebuilding and **re-signing**,
+  which is why `crearTicketConCorrelativo` takes a callback. Unlike a comprobante, a burnt
+  RA/RC number costs nothing: summaries carry no gap-free obligation.
+- **`fechaReferencia` holds the day the RA/RC was generated**, not the day the voided
+  comprobante was issued, despite what the schema comment says. That is the field SUNAT
+  makes unique; storing anything else would let two RA generated today both claim number 1.
+
+A comprobante issued by the previous provider (no `SunatEnvio` of its own) still goes
+through ApiSunat. That branch can be deleted once none is left within the 7-day window.
+
+**Notas de crédito are still not implemented.** Past the deadline the baja is refused with
+a message pointing at SEE-SOL, because a nota de crédito is the only valid correction then.
 
 **Tooling.** `npm test` (vitest), `npm run sunat:cert` (verify the certificate),
 `npm run sunat:b64` (encode it for Railway), `npm run sunat:enviar` (send a test
 document), `npm run sunat:serie` (ask SUNAT which correlativos of a series are
-already taken — see below), and `GET /api/sunat/estado` (diagnose a deployment
+already taken — see below), `npm run sunat:baja <fullNumber>` (build and sign the
+anulación of a real comprobante and print it, writing and sending nothing),
+`npm run sunat:probar-anulacion` (emit and void throwaway documents against beta;
+it refuses to run outside beta), and `GET /api/sunat/estado` (diagnose a deployment
 without emitting).
 
 ### Where this stands (last touched 2026-08-21)
@@ -223,11 +256,25 @@ no observations). `ConvertirView` sends only `docType`/`docNumber`/`name`, so ev
 converted factura goes out with no `cac:RegistrationAddress`, unlike the earlier beta
 run that had one.
 
-**Still open:** voiding is unimplemented (`anular` → 501), so a wrong comprobante cannot
-be undone from the POS. And `npm run sunat:serie` has still never run against
-production — `.env.sunat-prod` misses `SUNAT_SOL_PASSWORD`, and the SOL user has never
-exercised the *consultar validez de CPE* permission. It stays the right tool before
-touching a counter; it simply was not needed this time.
+**Voiding is implemented and verified end to end — against beta.** The full cycle runs:
+create → emit → void → poll leaves the document `VOIDED` with `voidedAt`, `voidCdrCode`
+and the CDR stored, and the real flow (nota de venta → convert → void) puts the stock
+back, zeroes the cash session and voids the origin nota. **It has never run against
+production**, which is the one thing left: it needs a real comprobante that genuinely has
+to be voided — never emit one just to test the baja, since the correlativo is spent either
+way and it declares a sale that never happened. After the first one, check in SEE-SOL that
+SUNAT and the POS agree before trusting the flow.
+
+**Still open:** notas de crédito, which is what the law asks for once the 7-day window has
+passed; today the POS refuses and points at SEE-SOL. And `npm run sunat:serie` has still
+never run against production — `.env.sunat-prod` misses `SUNAT_SOL_PASSWORD`, and the SOL
+user has never exercised the *consultar validez de CPE* permission. It stays the right tool
+before touching a counter; it simply was not needed this time.
+
+**The 7-day deadline is from memory** (`DIAS_PLAZO_BAJA` in `lib/sunat/plazos.ts`). It is in
+one place with the citation in the comment, but it is worth having the accountant confirm it
+against the current resolution; if it differs between factura and boleta the constant splits
+in two and the design already supports it.
 
 ### Authentication
 
@@ -280,4 +327,6 @@ Catalog seeds are NOT auto-run on each deploy anymore — run `npx tsx prisma/se
 - **Series in use**: `B001` boletas (local principal, POS), `F001` facturas, `B002` boletas of the Tienda Moral branch, `EB01` boletas issued by hand from the SEE-SOL portal. The POS must never touch `B002` or `EB01`.
 - **A converted nota de venta does not move stock or cash** — the original already did. The comprobante carries a `Convertido de …` marker in `notes` (`lib/conversion.ts`) so that deleting it does not revert what it never took. `DELETE /api/ventas/[id]` also refuses any document that already has a `SunatEnvio`: the correlativo is spent and the signed XML is the evidence.
 - **A nota de venta converts once.** That same marker is what `convertir` checks to refuse a second conversion (409) and what `GET /api/ventas/convertibles` uses to keep already-converted notas out of the Convertir screen. Two exceptions carry the whole design: a conversion left `REJECTED` **may** be redone — that comprobante is worthless and the sale still needs a valid one — while `PENDING`/`SEND_ERROR` must be **retried** via `/api/comprobantes/[id]/reintentar`, because its correlativo is still alive and converting again would burn a fresh number. `PATCH` re-applies the marker when `notes` is edited, or an edit would silently unlock the double conversion.
+- **Voiding a converted comprobante voids its nota too**, and `convertir` refuses a nota that is not `ACCEPTED`. Without that guard the voided nota — whose stock and cash already went back — could be converted again through the API and would declare to SUNAT a sale that no longer exists. The Convertir screen does not offer it (it only lists `ACCEPTED` notas), but the route is callable all the same.
+- **SUNAT rejects SOAP calls that arrive back to back** with a gateway `401`. `cliente-soap.ts` serializes them and spaces them by `SUNAT_PAUSA_LLAMADAS_MS`. See the SEE section — this one silently crippled the queue for a long time.
 - **Timezone**: All dates use Lima/Peru timezone (`America/Lima`, UTC-5). Use `toLocaleString('es-PE', { timeZone: 'America/Lima' })` for display.
