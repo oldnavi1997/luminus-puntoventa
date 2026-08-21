@@ -162,6 +162,30 @@ document), `npm run sunat:serie` (ask SUNAT which correlativos of a series are
 already taken — see below), and `GET /api/sunat/estado` (diagnose a deployment
 without emitting).
 
+### Where this stands (last touched 2026-08-21)
+
+**Direct emission to SUNAT works.** `B001-00000053` was accepted on 2026-08-21
+(code `0`, CDR stored) — the first comprobante this POS ever got through by itself.
+The SOL user is `WENDY210`, `SUNAT_ENV=produccion`, certificate valid until
+2027-08-19. Queue empty, nothing in `SEND_ERROR`.
+
+Counters were realigned by hand with what the previous billing provider left behind:
+`B001` at 53, `F001` at **27**, `NV001` at 251.
+
+**Next thing to do: issue the first factura.** `F001-00000028` has never been
+verified against SUNAT — `27` comes from the last PDF the owner still had, which is
+exactly the reasoning that cost three correlativos on `B001`. The owner chose to test
+it by issuing a real factura for a small amount rather than querying first; if it comes
+back `1032`/`1033`, raise `DocumentSerie.lastNumber` and reissue. `npm run sunat:serie
+F001 1 40 factura` answers it without emitting — `.env.sunat-prod` is already prepared
+and only misses `SUNAT_SOL_PASSWORD`. That query needs the SOL user to also hold the
+*consultar validez de CPE* permission, which has never been exercised.
+
+**Not verified end to end:** the single-conversion guard was checked by tests and by
+replaying its queries against the production data, but never through the running app
+(it needs a dev server and an open cash session). Voiding is still unimplemented
+(`anular` → 501), so a wrong comprobante cannot be undone from the POS.
+
 ### Authentication
 
 NextAuth v4 with credentials provider (`lib/auth.ts`). Only `ADMIN` and `CASHIER` roles can access the POS. The JWT session includes `posSessionId` (current open session). `USER` role is for ecommerce only.
