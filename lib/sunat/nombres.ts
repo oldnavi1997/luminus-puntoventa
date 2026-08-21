@@ -30,6 +30,17 @@ export function nombreResumen(
   return `${ruc}-${tipoDocumento}-${fecha.replace(/-/g, "")}-${correlativo}`;
 }
 
+/**
+ * El `cbc:ID` que va DENTRO del XML de un resumen o una baja: `RA-20260821-1`.
+ *
+ * Vive pegado a `nombreResumen` porque los dos tienen que llevar la misma fecha
+ * y el mismo correlativo. Si el nombre del ZIP y el ID del XML no coinciden,
+ * SUNAT rechaza el envío antes de mirar el contenido.
+ */
+export function idResumen(tipoDocumento: string, fecha: string, correlativo: number): string {
+  return `${tipoDocumento}-${fecha.replace(/-/g, "")}-${correlativo}`;
+}
+
 export const archivoXml = (raiz: string) => `${raiz}.xml`;
 export const archivoZip = (raiz: string) => `${raiz}.zip`;
 /** SUNAT devuelve el CDR con el prefijo "R-". */
