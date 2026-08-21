@@ -145,9 +145,11 @@ three were found by getting rejected in beta, and are locked down by tests in
 validator rejection or incomplete buyer data would fail identically on retry, so
 those wait for correction instead. Drained by `POST /api/queue/process`, which
 accepts either an ADMIN session or `Authorization: Bearer $QUEUE_SECRET`.
-**No cron is configured yet** — nothing drains it on a schedule. (For years the
-endpoint only accepted a session, so no cron *could* call it and the queue never
-drained at all.)
+It is also drained automatically: `instrumentation.ts` starts an in-process
+interval (5 min in production, off in dev; `QUEUE_DRAIN_INTERVAL_MS` overrides,
+`0` disables). Railway runs a persistent Node process, so this needs no external
+cron service and no secret that can expire. (For years the endpoint only accepted
+a session, so no cron *could* call it and the queue never drained at all.)
 
 **Not implemented yet:** voiding. `app/api/ventas/[id]/anular` returns **501** for
 self-emitted documents — ApiSunat cannot void what it never issued, and letting it
@@ -156,7 +158,9 @@ Needs comunicación de baja (facturas) and resumen de anulación (boletas).
 
 **Tooling.** `npm test` (vitest), `npm run sunat:cert` (verify the certificate),
 `npm run sunat:b64` (encode it for Railway), `npm run sunat:enviar` (send a test
-document), and `GET /api/sunat/estado` (diagnose a deployment without emitting).
+document), `npm run sunat:serie` (ask SUNAT which correlativos of a series are
+already taken — see below), and `GET /api/sunat/estado` (diagnose a deployment
+without emitting).
 
 ### Authentication
 
@@ -204,5 +208,9 @@ Catalog seeds are NOT auto-run on each deploy anymore — run `npx tsx prisma/se
 - **Payment methods**: EFECTIVO, TARJETA, YAPE, MIXTO. Mixed payments split the total across methods; `SaleDocument` stores individual amounts per method.
 - **Stock locations**: Products track `stockTienda` (showroom) and `stockAlmacen` (warehouse) separately. Sales deduct from `stockTienda`. `stock` is the total (tienda + almacén), so only `INGRESO` moves it — transfers just relocate units already counted.
 - **Stock movements**: `TipoMovimientoStock` is INGRESO (new stock into the warehouse), TRASLADO (almacén → tienda) and RETORNO (tienda → almacén). The column matrix lives only in `lib/stock-movimiento.ts` (`dataDe`, `whereConStock`) — routes send a tipo and a quantity, never a column. The stock check rides inside the update's `where`, so two concurrent movements can't drive a product negative (there is no `CHECK >= 0` in the DB); a failed match surfaces as P2025 → 409. Every movement writes a `StockMovimiento` row with the resulting balances, listed by `GET /api/productos/movimientos`.
-- **Document series**: Each `DocumentType` + series letter has its own `DocumentSerie` row with an auto-incrementing correlativo. Never set manually—always use the DB sequence.
+- **Document series**: Each `DocumentType` + series letter has its own `DocumentSerie` row with an auto-incrementing correlativo. The series is **not in the code**: `reservarCorrelativo` (`lib/document-serie.ts`) reads the active row, so switching series is one `UPDATE`, not a deploy. If several rows are active for a type, the newest wins.
+- **A correlativo SUNAT already knows is burned forever.** Emitting against one is rejected `1033` (already reported) or `1032` (reported and then voided — a voided number does *not* free up), and the number is spent either way. Luminus' B001 came from a previous provider and its real extent was unknown, so finding the end cost three correlativos. Before touching a counter, ask SUNAT: `npm run sunat:serie B001 1 120` consults `billConsultService` and emits nothing. It needs production credentials in `.env.sunat-prod` (gitignored) and a SOL user with the *consultar validez de CPE* permission.
+- **Series in use**: `B001` boletas (local principal, POS), `F001` facturas, `B002` boletas of the Tienda Moral branch, `EB01` boletas issued by hand from the SEE-SOL portal. The POS must never touch `B002` or `EB01`.
+- **A converted nota de venta does not move stock or cash** — the original already did. The comprobante carries a `Convertido de …` marker in `notes` (`lib/conversion.ts`) so that deleting it does not revert what it never took. `DELETE /api/ventas/[id]` also refuses any document that already has a `SunatEnvio`: the correlativo is spent and the signed XML is the evidence.
+- **A nota de venta converts once.** That same marker is what `convertir` checks to refuse a second conversion (409) and what `GET /api/ventas/convertibles` uses to keep already-converted notas out of the Convertir screen. Two exceptions carry the whole design: a conversion left `REJECTED` **may** be redone — that comprobante is worthless and the sale still needs a valid one — while `PENDING`/`SEND_ERROR` must be **retried** via `/api/comprobantes/[id]/reintentar`, because its correlativo is still alive and converting again would burn a fresh number. `PATCH` re-applies the marker when `notes` is edited, or an edit would silently unlock the double conversion.
 - **Timezone**: All dates use Lima/Peru timezone (`America/Lima`, UTC-5). Use `toLocaleString('es-PE', { timeZone: 'America/Lima' })` for display.
