@@ -6,7 +6,7 @@
     "sync:schema": "node -e \"require('fs').copyFileSync(require('path').resolve('..','luminus','prisma','schema.prisma'),'prisma/schema.prisma')\"",
     "verify:schema": "node scripts/verify-schema.js",
     "predev": "npm run sync:schema && prisma generate",
-    "dev": "next dev --turbopack",
+    "dev": "next dev --turbopack -p 3003",
     "prebuild": "npm run verify:schema && prisma generate",
     "build": "next build",
     "start": "next start",

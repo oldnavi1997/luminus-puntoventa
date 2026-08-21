@@ -18,6 +18,12 @@ interface Doc {
   paymentMethod: string;
   createdAt: string;
   pdfUrl?: string | null;
+  voidReason?: string | null;
+  voidedAt?: string | null;
+  voidCdrCode?: string | null;
+  /** Si SUNAT todavía aceptaría la baja. Lo calcula el servidor. */
+  anulable?: boolean;
+  diasParaAnular?: number;
 }
 
 interface Stats {
@@ -29,16 +35,22 @@ interface Stats {
 }
 
 type TypeFilter   = "all" | "BOLETA" | "FACTURA";
-type StatusFilter = "all" | "ACCEPTED" | "PENDING" | "REJECTED" | "VOIDED";
+type StatusFilter = "all" | "ACCEPTED" | "PENDING" | "REJECTED" | "VOID_PENDING" | "VOIDED";
 
 const STATUS_LABEL: Record<string, string> = {
-  ACCEPTED:     "Aceptado",
-  PENDING:      "Pendiente",
-  REJECTED:     "Rechazado",
-  DRAFT:        "Borrador",
-  VOIDED:       "Anulado",
-  VOID_PENDING: "Anulando...",
+  ACCEPTED:                   "Aceptado",
+  ACCEPTED_WITH_OBSERVATIONS: "Aceptado c/obs.",
+  PENDING:                    "Pendiente",
+  REJECTED:                   "Rechazado",
+  SEND_ERROR:                 "Error de envío",
+  DRAFT:                      "Borrador",
+  PARTIAL:                    "Adelanto",
+  VOIDED:                     "Anulado",
+  VOID_PENDING:               "Anulando...",
 };
+
+/** Los que el botón de anular admite: SUNAT sólo da de baja lo que aceptó. */
+const ANULABLES = ["ACCEPTED", "ACCEPTED_WITH_OBSERVATIONS"];
 
 const METHOD_LABEL: Record<string, string> = {
   EFECTIVO: "Efectivo",
@@ -58,6 +70,7 @@ export function ComprobantesView({ isAdmin }: { isAdmin: boolean }) {
   const [voidMotivo,  setVoidMotivo]  = useState("");
   const [voidLoading, setVoidLoading] = useState(false);
   const [voidError,   setVoidError]   = useState("");
+  const [voidAviso,   setVoidAviso]   = useState("");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -75,6 +88,16 @@ export function ComprobantesView({ isAdmin }: { isAdmin: boolean }) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Una baja tarda en resolverse porque SUNAT la contesta por ticket. Se
+  // refresca sólo mientras haya alguna en curso: sondear siempre sería gastar
+  // peticiones para no enterarse de nada.
+  const hayBajasEnCurso = docs.some((d) => d.status === "VOID_PENDING");
+  useEffect(() => {
+    if (!hayBajasEnCurso) return;
+    const t = setInterval(fetchData, 20_000);
+    return () => clearInterval(t);
+  }, [hayBajasEnCurso, fetchData]);
+
   async function handleVoid() {
     if (!voidDoc || voidMotivo.trim().length < 5) return;
     setVoidLoading(true);
@@ -87,7 +110,14 @@ export function ComprobantesView({ isAdmin }: { isAdmin: boolean }) {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Error al anular");
-      setVoidDoc(null);
+
+      // La ruta responde 202: SUNAT todavía no ha dicho nada. Cerrar el modal
+      // como si estuviera hecho haría creer que el comprobante ya está anulado.
+      setVoidAviso(
+        json.ticket
+          ? `Baja enviada. Ticket ${json.ticket}. Quedará anulado cuando SUNAT confirme.`
+          : (json.mensaje ?? "Baja enviada."),
+      );
       setVoidMotivo("");
       fetchData();
     } catch (e) {
@@ -147,7 +177,7 @@ export function ComprobantesView({ isAdmin }: { isAdmin: boolean }) {
 
             {/* Status filter */}
             <div className="flex bg-surface-light rounded-lg p-0.5 gap-0.5 border border-border">
-              {(["all", "ACCEPTED", "PENDING", "REJECTED", "VOIDED"] as StatusFilter[]).map((s) => (
+              {(["all", "ACCEPTED", "PENDING", "REJECTED", "VOID_PENDING", "VOIDED"] as StatusFilter[]).map((s) => (
                 <button
                   key={s}
                   onClick={() => setStatus(s)}
@@ -218,7 +248,9 @@ export function ComprobantesView({ isAdmin }: { isAdmin: boolean }) {
                     <td className="px-4 py-3 border-b border-border text-right">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
                         d.status === "ACCEPTED"     ? "bg-success-soft text-success" :
+                        d.status === "ACCEPTED_WITH_OBSERVATIONS" ? "bg-success-soft text-success" :
                         d.status === "PENDING"      ? "bg-warning-soft text-warning" :
+                        d.status === "SEND_ERROR"   ? "bg-danger-soft text-danger"   :
                         d.status === "REJECTED"     ? "bg-danger-soft text-danger"   :
                         d.status === "VOID_PENDING" ? "bg-warning-soft text-warning" :
                         d.status === "VOIDED"       ? "bg-surface-dark text-ink-3"   :
@@ -240,13 +272,22 @@ export function ComprobantesView({ isAdmin }: { isAdmin: boolean }) {
                             PDF
                           </a>
                         )}
-                        {isAdmin && d.status === "ACCEPTED" && d.type !== "NOTA_VENTA" && (
-                          <button
-                            onClick={() => { setVoidDoc(d); setVoidMotivo(""); setVoidError(""); }}
-                            className="text-[12px] text-danger bg-danger-soft hover:bg-danger/20 px-3 py-1 rounded-lg transition-colors border border-danger/20"
-                          >
-                            Anular
-                          </button>
+                        {isAdmin && ANULABLES.includes(d.status) && d.type !== "NOTA_VENTA" && (
+                          d.anulable === false ? (
+                            <span
+                              className="text-[11px] text-ink-4 px-2 py-1"
+                              title="Pasado el plazo de 7 días la única corrección válida es una nota de crédito, que se hace a mano en SEE-SOL."
+                            >
+                              Fuera de plazo
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => { setVoidDoc(d); setVoidMotivo(""); setVoidError(""); setVoidAviso(""); }}
+                              className="text-[12px] text-danger bg-danger-soft hover:bg-danger/20 px-3 py-1 rounded-lg transition-colors border border-danger/20"
+                            >
+                              Anular
+                            </button>
+                          )
                         )}
                       </div>
                     </td>
@@ -270,42 +311,78 @@ export function ComprobantesView({ isAdmin }: { isAdmin: boolean }) {
               </div>
             </div>
 
-            <p className="text-[12.5px] text-ink-3">
-              Esta acción enviará un comunicado de baja a SUNAT y no se puede deshacer.
-            </p>
+            {voidAviso ? (
+              <p className="text-[12.5px] text-success bg-success-soft rounded-lg px-3 py-2">
+                {voidAviso}
+              </p>
+            ) : (
+              <>
+                <div className="text-[12.5px] text-ink-3 space-y-1.5">
+                  <p>
+                    Se enviará a SUNAT{" "}
+                    <strong className="text-ink">
+                      {voidDoc.type === "FACTURA"
+                        ? "una comunicación de baja (RA)"
+                        : "un resumen de anulación (RC)"}
+                    </strong>
+                    . La respuesta no es inmediata: llega por ticket, normalmente en unos
+                    segundos.
+                  </p>
+                  <p className="text-warning">
+                    Cuando SUNAT lo acepte se devolverá el stock y se descontará de la caja.
+                    {" "}Si además salió de una nota de venta, la nota se anulará con él.
+                  </p>
+                  {typeof voidDoc.diasParaAnular === "number" && (
+                    <p className="text-ink-4">
+                      {voidDoc.diasParaAnular === 0
+                        ? "Hoy es el último día de plazo."
+                        : `Quedan ${voidDoc.diasParaAnular} día(s) de plazo.`}
+                    </p>
+                  )}
+                </div>
 
-            <div>
-              <label className="text-[11px] uppercase tracking-wide text-ink-3 font-medium mb-1 block">
-                Motivo de anulación *
-              </label>
-              <textarea
-                value={voidMotivo}
-                onChange={(e) => setVoidMotivo(e.target.value)}
-                placeholder="Ej: Error en datos del cliente"
-                rows={2}
-                className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-danger resize-none"
-              />
-              {voidMotivo.trim().length > 0 && voidMotivo.trim().length < 5 && (
-                <p className="text-[11px] text-warning mt-1">Mínimo 5 caracteres</p>
-              )}
-            </div>
+                <div>
+                  <label className="text-[11px] uppercase tracking-wide text-ink-3 font-medium mb-1 block">
+                    Motivo de anulación *
+                  </label>
+                  <textarea
+                    value={voidMotivo}
+                    onChange={(e) => setVoidMotivo(e.target.value)}
+                    placeholder="Ej: Error en datos del cliente"
+                    rows={2}
+                    maxLength={100}
+                    className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-danger resize-none"
+                  />
+                  <div className="flex justify-between mt-1">
+                    <span className="text-[11px] text-warning">
+                      {voidMotivo.trim().length > 0 && voidMotivo.trim().length < 5
+                        ? "Mínimo 5 caracteres"
+                        : ""}
+                    </span>
+                    {/* SUNAT corta el motivo en 100: mejor verlo que descubrirlo después. */}
+                    <span className="text-[11px] text-ink-4">{voidMotivo.length}/100</span>
+                  </div>
+                </div>
+              </>
+            )}
 
             {voidError && <p className="text-[12px] text-danger">{voidError}</p>}
-
             <div className="flex gap-2">
               <button
-                onClick={() => setVoidDoc(null)}
+                onClick={() => { setVoidDoc(null); setVoidAviso(""); }}
                 className="flex-1 bg-surface-light border border-border rounded-xl py-2.5 text-[13px] text-ink hover:bg-border transition-colors"
               >
-                Cancelar
+                {voidAviso ? "Cerrar" : "Cancelar"}
               </button>
-              <button
-                onClick={handleVoid}
-                disabled={voidLoading || voidMotivo.trim().length < 5}
-                className="flex-1 bg-danger hover:bg-danger-dark disabled:opacity-40 text-white rounded-xl py-2.5 text-[13px] font-semibold transition-colors"
-              >
-                {voidLoading ? "Anulando..." : "Confirmar anulación"}
-              </button>
+              {!voidAviso && (
+                <button
+                  onClick={handleVoid}
+                  disabled={voidLoading || voidMotivo.trim().length < 5}
+                  className="flex-1 bg-danger hover:bg-danger-dark disabled:opacity-40 text-white rounded-xl py-2.5 text-[13px] font-semibold transition-colors"
+                >
+                  {voidLoading ? "Enviando..." : "Confirmar anulación"}
+                </button>
+              )}
             </div>
           </div>
         </div>

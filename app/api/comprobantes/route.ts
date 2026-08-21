@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { plazoDeBaja } from "@/lib/sunat/plazos";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -41,6 +42,9 @@ export async function GET(req: NextRequest) {
       paymentMethod: true,
       createdAt: true,
       pdfUrl: true,
+      voidReason: true,
+      voidedAt: true,
+      voidCdrCode: true,
     },
   });
 
@@ -70,11 +74,21 @@ export async function GET(req: NextRequest) {
     .reduce((s, d) => s + Number(d.total), 0);
 
   return NextResponse.json({
-    docs: docs.map((d) => ({
-      ...d,
-      total: Number(d.total),
-      createdAt: d.createdAt.toISOString(),
-    })),
+    docs: docs.map((d) => {
+      // El plazo se calcula aquí y no en el navegador: la constante de días
+      // y el cálculo en horario de Lima viven en un solo sitio, y es el mismo
+      // que valida la ruta de anular.
+      const plazo = plazoDeBaja(d.createdAt);
+
+      return {
+        ...d,
+        total: Number(d.total),
+        createdAt: d.createdAt.toISOString(),
+        voidedAt: d.voidedAt ? d.voidedAt.toISOString() : null,
+        anulable: !plazo.vencido,
+        diasParaAnular: plazo.diasRestantes,
+      };
+    }),
     stats: {
       emitidosHoy: todayDocs.length,
       totalAceptado: totalAccepted,
