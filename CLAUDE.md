@@ -164,27 +164,41 @@ without emitting).
 
 ### Where this stands (last touched 2026-08-21)
 
-**Direct emission to SUNAT works.** `B001-00000053` was accepted on 2026-08-21
-(code `0`, CDR stored) — the first comprobante this POS ever got through by itself.
-The SOL user is `WENDY210`, `SUNAT_ENV=produccion`, certificate valid until
-2027-08-19. Queue empty, nothing in `SEND_ERROR`.
+**Direct emission to SUNAT works, for both document types.** `B001-00000053` was the
+first comprobante this POS ever got through by itself and `F001-00000028` the first
+factura — both accepted on 2026-08-21 (code `0`, CDR stored). The SOL user is
+`WENDY210`, `SUNAT_ENV=produccion`, certificate valid until 2027-08-19. Queue empty,
+nothing in `SEND_ERROR`.
 
 Counters were realigned by hand with what the previous billing provider left behind:
-`B001` at 53, `F001` at **27**, `NV001` at 251.
+`B001` at 53, `F001` at **28**, `NV001` at 251. The `27` that `F001` continued from came
+from the last PDF the owner still had — the same reasoning that cost three correlativos
+on `B001` — but this time it was right: `F001-00000028` was accepted on the first
+attempt and no number was lost.
 
-**Next thing to do: issue the first factura.** `F001-00000028` has never been
-verified against SUNAT — `27` comes from the last PDF the owner still had, which is
-exactly the reasoning that cost three correlativos on `B001`. The owner chose to test
-it by issuing a real factura for a small amount rather than querying first; if it comes
-back `1032`/`1033`, raise `DocumentSerie.lastNumber` and reissue. `npm run sunat:serie
-F001 1 40 factura` answers it without emitting — `.env.sunat-prod` is already prepared
-and only misses `SUNAT_SOL_PASSWORD`. That query needs the SOL user to also hold the
-*consultar validez de CPE* permission, which has never been exercised.
+**Issue a factura as a conversion of a nota de venta, not as a direct FACTURA sale.**
+That is how the first one was done, and the asymmetry on rejection is the reason. A
+direct sale has already moved stock and cash by the time SUNAT answers, and the
+rejected `SaleDocument` cannot be deleted (`DELETE /api/ventas/[id]` → 409 once a
+`SunatEnvio` exists), so each retry needs a *second* sale that moves both again and
+leaves a phantom behind. A conversion moves neither — the nota did that once — and a
+`REJECTED` conversion is explicitly allowed to be redone, with the nota reappearing in
+`/api/ventas/convertibles`. Retrying costs the correlativo and nothing else.
 
-**Not verified end to end:** the single-conversion guard was checked by tests and by
-replaying its queries against the production data, but never through the running app
-(it needs a dev server and an open cash session). Voiding is still unimplemented
-(`anular` → 501), so a wrong comprobante cannot be undone from the POS.
+That run also exercised the **single-conversion guard through the running app** for the
+first time; until then it had only been checked by tests and by replaying its queries
+against production data.
+
+**A factura with no buyer address is accepted** — verified in beta (`F001-90`, code `0`,
+no observations). `ConvertirView` sends only `docType`/`docNumber`/`name`, so every
+converted factura goes out with no `cac:RegistrationAddress`, unlike the earlier beta
+run that had one.
+
+**Still open:** voiding is unimplemented (`anular` → 501), so a wrong comprobante cannot
+be undone from the POS. And `npm run sunat:serie` has still never run against
+production — `.env.sunat-prod` misses `SUNAT_SOL_PASSWORD`, and the SOL user has never
+exercised the *consultar validez de CPE* permission. It stays the right tool before
+touching a counter; it simply was not needed this time.
 
 ### Authentication
 

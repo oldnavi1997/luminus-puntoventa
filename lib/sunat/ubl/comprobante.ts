@@ -234,7 +234,10 @@ export function construirComprobante(p: ParametrosComprobante): string {
   const clienteLegal = cliente.ele("cac:PartyLegalEntity");
   clienteLegal.ele("cbc:RegistrationName").dat(adquirente.name).up();
 
-  // La dirección del adquirente sólo es exigible en factura.
+  // SUNAT no exige la dirección del adquirente: una factura sin ella se acepta
+  // igual (beta F001-90, código 0 y sin observaciones). Va sólo en factura y
+  // sólo si viene, que es lo normal —la pantalla de Convertir no la manda—, así
+  // que el bloque tiene que poder faltar sin que eso sea un defecto.
   if (esFactura && adquirente.address) {
     clienteLegal
       .ele("cac:RegistrationAddress")
