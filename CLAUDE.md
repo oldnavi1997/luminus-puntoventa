@@ -151,6 +151,35 @@ interval (5 min in production, off in dev; `QUEUE_DRAIN_INTERVAL_MS` overrides,
 cron service and no secret that can expire. (For years the endpoint only accepted
 a session, so no cron *could* call it and the queue never drained at all.)
 
+**SUNAT rejects calls that arrive back to back**, with an HTTP `401` from its nginx
+gateway — an HTML page, not a SOAP envelope, which is how it is told apart from a real
+credential problem (those come back as fault `0111`). Verified in beta: two `sendBill`
+in a row fail the second and third; half a second between them and both pass. So
+`cliente-soap.ts` serializes every call and leaves `SUNAT_PAUSA_LLAMADAS_MS` (default
+1200 ms) between them, and retries a gateway 401 twice. This is not a nicety: before it,
+`processQueue` — which drains up to ten documents in a loop — placed only the first of
+each pass and pushed the rest back into the queue as if SUNAT had never answered. The
+pause is env-driven so the tests, where `fetch` is stubbed and there is no gateway, can
+set it to `0`.
+
+**Voiding, verified against beta on 2026-08-21** (`npm run sunat:probar-anulacion`):
+
+- A boleta reported **individually** through `sendBill` *can* be voided with an `RC`
+  carrying `cac:Status/cbc:ConditionCode = 3`. This was the open question that decided
+  whether the boleta path was viable at all; it is.
+- A factura is voided with an `RA` (`VoidedDocuments`). Both were accepted, code `0`.
+- **The CDR of an RA/RC carries exactly one `DocumentResponse`, and its reference is the
+  RA/RC’s own ID — not the voided comprobante.** So looking the response up by the
+  comprobante number never matches; `lineaPara` falls back to the single response, which
+  is why one document per RA/RC is the right granularity. Batching several would leave
+  no way to tell which line SUNAT answered about.
+- `idRespuesta` in the CDR is the ticket number.
+- **A ticket is single use.** A second `getStatus` on a resolved ticket answers `0127`
+  with content that is not a ZIP. The CDR has to be persisted the first time it is read;
+  there is no asking again.
+- Both tickets resolved on the first poll, ~3 s after sending. `98` (in process) exists
+  and has to be handled, but the common case is fast.
+
 **Not implemented yet:** voiding. `app/api/ventas/[id]/anular` returns **501** for
 self-emitted documents — ApiSunat cannot void what it never issued, and letting it
 try would mark the document `VOIDED` locally while SUNAT still considers it valid.

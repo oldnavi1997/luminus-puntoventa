@@ -42,6 +42,59 @@ function escaparXml(v: string): string {
     .replace(/'/g, "&apos;");
 }
 
+/**
+ * Dos llamadas pegadas al servicio de SUNAT reciben un 401 de su gateway.
+ *
+ * No es un problema de credenciales: es el nginx que tiene delante, y se
+ * reconoce porque responde una página HTML en vez de un sobre SOAP (un
+ * permiso mal dado llega como fault 0111, no como esto). Comprobado contra
+ * beta: dos sendBill seguidos sin pausa fallan el segundo y el tercero, y con
+ * medio segundo entre medias pasan los dos.
+ *
+ * Importa más de lo que parece: `processQueue` drena hasta diez comprobantes
+ * en un bucle, así que sin esto la cola sólo colocaba el primero de cada
+ * pasada y devolvía los demás a la cola como si SUNAT no hubiera respondido.
+ */
+/**
+ * Se lee del entorno para poder anularla donde no hay gateway que respetar:
+ * con `fetch` simulado la pausa es tiempo muerto y nada más.
+ */
+const PAUSA_ENTRE_LLAMADAS_MS = Number(process.env.SUNAT_PAUSA_LLAMADAS_MS ?? 1_200);
+const ESPERA_TRAS_401_MS = 4_000;
+const REINTENTOS_401 = 2;
+
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+let ultimaLlamada = 0;
+let turno: Promise<unknown> = Promise.resolve();
+
+/**
+ * Serializa las llamadas a SUNAT y deja un hueco mínimo entre ellas.
+ *
+ * Va aquí y no en quien llama porque el estrangulamiento es por servicio, no
+ * por operación: emitir, anular y sondear compiten por el mismo hueco.
+ */
+function enTurno<T>(fn: () => Promise<T>): Promise<T> {
+  const resultado = turno.then(async () => {
+    const transcurrido = Date.now() - ultimaLlamada;
+    if (transcurrido < PAUSA_ENTRE_LLAMADAS_MS) {
+      await esperar(PAUSA_ENTRE_LLAMADAS_MS - transcurrido);
+    }
+    try {
+      return await fn();
+    } finally {
+      ultimaLlamada = Date.now();
+    }
+  });
+
+  // La cola no puede romperse porque una llamada falle.
+  turno = resultado.then(
+    () => undefined,
+    () => undefined,
+  );
+  return resultado;
+}
+
 function sobre(config: ConfigSunat, cuerpo: string): string {
   return (
     `<soapenv:Envelope xmlns:soapenv="${NS_SOAP}" xmlns:ser="${NS_SERVICIO}" xmlns:wsse="${NS_WSSE}">` +
@@ -58,13 +111,12 @@ function sobre(config: ConfigSunat, cuerpo: string): string {
   );
 }
 
-async function llamar(
-  config: ConfigSunat,
+/** Una petición suelta. Devuelve la respuesta y su cuerpo sin interpretarlos. */
+async function peticion(
+  endpoint: string,
   accion: string,
-  cuerpo: string,
-  // La consulta por serie-correlativo no vive en el mismo servicio que el envío.
-  endpoint: string = config.endpoints.comprobantes,
-): Promise<Record<string, unknown>> {
+  sobreXml: string,
+): Promise<{ respuesta: Response; texto: string }> {
   let respuesta: Response;
 
   try {
@@ -74,11 +126,12 @@ async function llamar(
         "Content-Type": "text/xml; charset=utf-8",
         SOAPAction: `urn:${accion}`,
       },
-      body: sobre(config, cuerpo),
+      body: sobreXml,
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (err) {
-    const esTimeout = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+    const esTimeout =
+      err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
     throw new ErrorSunat(
       esTimeout ? "TIMEOUT" : "CONEXION",
       esTimeout
@@ -89,7 +142,34 @@ async function llamar(
     );
   }
 
-  const texto = await respuesta.text();
+  return { respuesta, texto: await respuesta.text() };
+}
+
+/** El 401 del gateway llega como HTML de nginx, no como un sobre SOAP. */
+function esEstrangulamiento(respuesta: Response, texto: string): boolean {
+  return respuesta.status === 401 && !texto.includes("Envelope");
+}
+
+async function llamar(
+  config: ConfigSunat,
+  accion: string,
+  cuerpo: string,
+  // La consulta por serie-correlativo no vive en el mismo servicio que el envío.
+  endpoint: string = config.endpoints.comprobantes,
+): Promise<Record<string, unknown>> {
+  const sobreXml = sobre(config, cuerpo);
+  let respuesta: Response;
+  let texto: string;
+
+  for (let intento = 0; ; intento++) {
+    ({ respuesta, texto } = await enTurno(() => peticion(endpoint, accion, sobreXml)));
+
+    if (!esEstrangulamiento(respuesta, texto) || intento >= REINTENTOS_401) break;
+
+    // Nada que corregir: la misma petición pasa sola con un hueco por delante.
+    await esperar(ESPERA_TRAS_401_MS);
+  }
+
   const parsed = parser.parse(texto) as Record<string, unknown>;
   const envelope = (parsed.Envelope ?? parsed) as Record<string, unknown>;
   const body = (envelope.Body ?? {}) as Record<string, unknown>;
@@ -100,7 +180,9 @@ async function llamar(
   if (!respuesta.ok) {
     throw new ErrorSunat(
       "CONEXION",
-      `SUNAT respondió HTTP ${respuesta.status} sin un fault interpretable.`,
+      esEstrangulamiento(respuesta, texto)
+        ? `SUNAT devolvió 401 en su gateway tras ${REINTENTOS_401 + 1} intentos espaciados. No es la clave SOL: es que rechaza llamadas seguidas.`
+        : `SUNAT respondió HTTP ${respuesta.status} sin un fault interpretable.`,
       { mensajeSunat: texto.slice(0, 300) },
     );
   }

@@ -17,6 +17,7 @@
     "sunat:b64": "tsx --env-file=.env.local scripts/certificado-base64.ts",
     "sunat:enviar": "tsx --env-file=.env.local scripts/enviar-prueba.ts",
     "sunat:baja": "tsx --env-file=.env.local scripts/generar-baja.ts",
+    "sunat:probar-anulacion": "tsx --env-file=.env.local scripts/probar-anulacion-beta.ts",
     "sunat:serie": "tsx --env-file=.env.sunat-prod scripts/consultar-serie.ts"
   },
   "dependencies": {
