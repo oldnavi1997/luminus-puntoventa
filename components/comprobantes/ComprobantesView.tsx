@@ -262,16 +262,17 @@ export function ComprobantesView({ isAdmin }: { isAdmin: boolean }) {
                     </td>
                     <td className="px-4 py-3 border-b border-border text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {d.pdfUrl && (
-                          <a
-                            href={d.pdfUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[12px] text-ink-3 hover:text-ink bg-surface-light hover:bg-border px-3 py-1 rounded-lg transition-colors border border-border"
-                          >
-                            PDF
-                          </a>
-                        )}
+                        {/* Antes esto colgaba de `d.pdfUrl`, que nunca se llenó:
+                            lo daba el proveedor anterior. Ahora el PDF lo genera
+                            el POS, así que el enlace siempre vale. */}
+                        <a
+                          href={`/api/ventas/${d.id}/pdf`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[12px] text-ink-3 hover:text-ink bg-surface-light hover:bg-border px-3 py-1 rounded-lg transition-colors border border-border"
+                        >
+                          PDF
+                        </a>
                         {isAdmin && ANULABLES.includes(d.status) && d.type !== "NOTA_VENTA" && (
                           d.anulable === false ? (
                             <span

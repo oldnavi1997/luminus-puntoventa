@@ -142,7 +142,7 @@ export function Receipt({ rep, onClose }: { rep: RepresentacionImpresa; onClose:
               {/* ── Datos ──────────────────────────────────────────────── */}
               <table style={{ width: "100%", marginBottom: "4px", borderCollapse: "collapse" }}>
                 <tbody>
-                  <Fila etiqueta="FECHA" valor={rep.documento.fechaEmision} />
+                  <Fila etiqueta="FECHA" valor={rep.documento.fechaEmisionCorta} />
                   <Fila etiqueta="HORA" valor={rep.documento.horaEmision} />
                   <Fila etiqueta="CLIENTE" valor={rep.adquirente.nombre} />
                   {rep.adquirente.numeroDoc && (

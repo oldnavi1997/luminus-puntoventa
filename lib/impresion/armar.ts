@@ -46,6 +46,12 @@ const ESTADOS_CON_VALIDEZ: DocumentStatus[] = [
   DocumentStatus.VOID_PENDING,
 ];
 
+/** `2026-05-27` -> `27/05/2026`, que es como se lee una fecha en Perú. */
+function fechaCorta(iso: string): string {
+  const [a, m, d] = iso.split("-");
+  return d && m && a ? `${d}/${m}/${a}` : iso;
+}
+
 function tipoSunatDe(type: DocumentType): string | null {
   if (type === DocumentType.FACTURA) return TIPO_DOCUMENTO.FACTURA;
   if (type === DocumentType.BOLETA) return TIPO_DOCUMENTO.BOLETA;
@@ -178,6 +184,7 @@ export function construirRepresentacion(entrada: EntradaRepresentacion): Represe
       correlativo: formatCorrelativo(documento.correlativo),
       fullNumber: documento.fullNumber,
       fechaEmision,
+      fechaEmisionCorta: fechaCorta(fechaEmision),
       horaEmision: horaLima(documento.emitidoEn),
       moneda: "SOL S/",
       estado: documento.status,

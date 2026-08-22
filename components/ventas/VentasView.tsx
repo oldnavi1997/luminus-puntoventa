@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ChevronDown, ChevronRight, Receipt as ReceiptIcon, X, Trash2, Pencil, Phone, User, Printer, Search, Undo2, IdCard } from "lucide-react";
+import { ChevronDown, ChevronRight, Receipt as ReceiptIcon, X, Trash2, Pencil, Phone, User, Printer, Search, Undo2, IdCard , FileDown } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
 import { ReceiptModal } from "@/components/pos/ReceiptModal";
@@ -443,6 +443,13 @@ export function VentasView() {
                             >
                               <Printer size={13} />
                             </button>
+                            <a
+                              href={`/api/ventas/${doc.id}/pdf?descargar=1`}
+                              className="p-1 rounded-lg text-ink-4 hover:text-ink-2 hover:bg-surface-light transition-colors"
+                              title="Descargar PDF"
+                            >
+                              <FileDown size={13} />
+                            </a>
                             <button
                               onClick={() => setEditingDoc(doc)}
                               className={`p-1 rounded-lg transition-colors ${hasExtra ? "text-accent hover:bg-accent/10" : "text-ink-4 hover:text-ink-2 hover:bg-surface-light"}`}

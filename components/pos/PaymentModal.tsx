@@ -518,10 +518,19 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
                 </div>
               </div>
 
-              {/* La segunda celda la ocupará el PDF; hasta entonces, una sola. */}
-              <button onClick={() => setShowReceipt(true)} className="w-full flex items-center justify-center gap-1.5 bg-surface-light hover:bg-border rounded-xl py-2.5 text-[13px] text-ink transition-colors border border-border">
-                <Printer size={14} /> Imprimir ticket
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setShowReceipt(true)} className="flex items-center justify-center gap-1.5 bg-surface-light hover:bg-border rounded-xl py-2.5 text-[13px] text-ink transition-colors border border-border">
+                  <Printer size={14} /> Ticket
+                </button>
+                <a
+                  href={`/api/ventas/${saleResult.id}/pdf`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-1.5 bg-surface-light hover:bg-border rounded-xl py-2.5 text-[13px] text-ink transition-colors border border-border"
+                >
+                  <FileText size={14} /> PDF
+                </a>
+              </div>
               <button onClick={onClose} className="w-full bg-ink hover:bg-ink-2 rounded-xl py-3 text-[14px] font-semibold text-white transition-colors">
                 Nueva venta
               </button>

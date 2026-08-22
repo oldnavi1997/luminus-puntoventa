@@ -86,7 +86,10 @@ export interface RepresentacionImpresa {
     /** Con los ceros de relleno. */
     correlativo: string;
     fullNumber: string;
+    /** `YYYY-MM-DD`. Es la que exige el QR; no se toca. */
     fechaEmision: string;
+    /** `DD/MM/YYYY`, sólo para enseñar. */
+    fechaEmisionCorta: string;
     horaEmision: string;
     moneda: string;
     estado: DocumentStatus;
