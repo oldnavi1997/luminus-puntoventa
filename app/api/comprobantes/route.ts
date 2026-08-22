@@ -41,7 +41,6 @@ export async function GET(req: NextRequest) {
       buyerDocNumber: true,
       paymentMethod: true,
       createdAt: true,
-      pdfUrl: true,
       voidReason: true,
       voidedAt: true,
       voidCdrCode: true,

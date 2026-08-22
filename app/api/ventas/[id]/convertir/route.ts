@@ -152,7 +152,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     id: newDoc.id,
     fullNumber: newDoc.fullNumber,
     status: emision.estadoDocumento,
-    pdfUrl: null,
     sunat: {
       aceptado: emision.aceptado,
       codigo: emision.codigo,

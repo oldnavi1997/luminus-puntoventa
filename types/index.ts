@@ -44,8 +44,6 @@ export interface SaleDocumentSummary {
   buyerName?: string | null;
   paymentMethod: string;
   createdAt: string;
-  pdfUrl?: string | null;
-  qrCode?: string | null;
 }
 
 export interface ProductForPOS {

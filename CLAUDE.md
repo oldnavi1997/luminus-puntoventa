@@ -288,6 +288,65 @@ in two and the design already supports it.
 
 NextAuth v4 with credentials provider (`lib/auth.ts`). Only `ADMIN` and `CASHIER` roles can access the POS. The JWT session includes `posSessionId` (current open session). `USER` role is for ecommerce only.
 
+### Printed representation (`lib/impresion/`)
+
+The ticket and the A4 PDF are two renderings of **one** thing. `cargar.ts` reads the sale,
+`armar.ts` turns it into a `RepresentacionImpresa`, and both the 80 mm ticket
+(`components/pos/Receipt.tsx`) and the PDF (`pdf/documento.ts`) just paint it. Endpoints:
+`GET /api/ventas/[id]/impresion` (JSON, for the ticket), `/pdf` (A4, `?descargar=1` to force
+a download) and `/xml` (the signed XML, `?cdr=1` for the CDR). All behind the session.
+
+What earns its keep here, in rough order of how expensive it would be to rediscover:
+
+- **`armar.ts` is pure on purpose** — no `prisma`, no `qrcode`, no `fs`, no `getConfigSunat`.
+  Everything that decides what a comprobante says can be tested without a database, which
+  matters because this project mocks Prisma nowhere. Only `cargar.ts` touches the DB.
+- **`emisor.ts` must not use `getConfigSunat()`.** That function builds
+  `certificado: { pfx: cargarPfx() }` inside the same memoised object, so it *throws* when the
+  certificate is missing or unreadable. Taking the RUC from there would tie reprinting old,
+  already-accepted comprobantes to the state of the certificate — exactly when it is most
+  needed. It reads the same env vars directly instead.
+- **Amounts come from `calcularComprobante` with the same arguments `emitir.ts` uses.** It is
+  deterministic, so the paper reconciles with the XML by construction, global discount
+  proration included. `cargar.ts` also cross-checks against `importesDelXml` of the stored
+  envío; a mismatch is logged and printed as a banner but **never blocks printing** — a
+  comprobante that exists has to be printable.
+- **`sunat === null` is the single predicate** for "SUNAT does not know this document". Notas
+  de venta and balance receipts get no QR, no hash and no legal legend. Nothing branches on
+  the document class to decide that.
+- **The title comes from `doc.type`, never from the `fullNumber` prefix**, which is what the
+  ticket used to do: a nota de venta on a series starting with "F" printed as a factura.
+- **Importing `armar.ts` from a client component breaks the build.** It imports the Prisma
+  enums as *values*, which drags the Prisma client — and Node built-ins — into the browser
+  bundle. Anything the ticket needs lives in `etiquetas.ts`, which only has types and plain
+  constants.
+- **The QR is always rasterised on the server**, both for the PDF (`qrPngBuffer`) and for the
+  ticket (`qrDataUrl`, shipped inside the JSON). No QR library in the browser bundle, no two
+  implementations that can drift, and the same bytes on thermal paper and in the PDF.
+- **`@page` must declare `size: 72mm auto`.** Without `size` the browser lays the ticket out
+  as A4. And `app/globals.css` sets `html, body { height:100%; overflow:hidden }`, which
+  react-to-print copies into its iframe and which would clip any ticket taller than the
+  viewport — hence the `!important` in the ticket’s `pageStyle`.
+- **pdfkit adds a page when you write below the bottom margin.** That is where the page
+  number goes, so a two-page factura came out with four. Lower `doc.page.margins.bottom`
+  while writing the footer. Smoke tests do not catch this: the PDF generates fine, you have
+  to count the pages.
+- **`fechaEmision` (ISO) and `fechaEmisionCorta` (`DD/MM/YYYY`) are separate fields.** The QR
+  needs the first; people read the second.
+- **The prescription is never printed.** `cargar.ts` does not even select it, and a test
+  asserts it appears nowhere in the serialised representation.
+
+`SaleDocument.pdfUrl` / `qrCode` / `xmlUrl` stay unused: the PDF is a deterministic function
+of the row plus the envío plus the env, and the QR string is derivable. Persisting either
+would only create a copy that ages the moment the layout changes. The canonical URL is the
+endpoint.
+
+Per-establishment data (`SUCURSAL: …`, phone) is keyed by **series** — `B001`/`F001` are the
+main shop, `B002` is Tienda Moral — overridable whole with `EMPRESA_SUCURSALES`. The footer
+says only verifiable things and points at SUNAT’s own CPE validator, not at a provider.
+`SUNAT_RESOLUCION` is empty by default: an invented resolution number on a tax document is
+worse than none.
+
 ### Key Utilities
 
 - `lib/lens-calc.ts` + `lib/calculador-lunas/` — Optical prescription calculation logic
@@ -310,6 +369,9 @@ Copy `.env.example` to `.env.local`. Required:
 | `SUNAT_CERTIFICATE_B64` | The `.p12`/`.pfx` as base64. Railway's filesystem is ephemeral, so a path will not survive; `SUNAT_CERTIFICATE_PATH` exists for local dev only |
 | `SUNAT_CERTIFICATE_PASSWORD` | Certificate password |
 | `QUEUE_SECRET` | Bearer token so a cron can drain the queue |
+| `EMPRESA_EMAIL` | Contact e-mail on the printed comprobante |
+| `EMPRESA_SUCURSALES` | JSON keyed by series with each establishment’s name, address and phone. Omit to use the known defaults |
+| `SUNAT_RESOLUCION` | Resolution that designated the electronic issuer. Empty prints no line — do not guess it |
 | `APISUNAT_TOKEN`, `APISUNAT_BASE_URL` | DNI/RUC lookup only — no longer used to emit |
 
 Dev database: `postgresql://postgres:75207666@localhost:5433/luminus` (shared with ecommerce, port 5433).

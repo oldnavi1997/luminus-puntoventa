@@ -17,7 +17,6 @@ interface Doc {
   buyerDocNumber?: string | null;
   paymentMethod: string;
   createdAt: string;
-  pdfUrl?: string | null;
   voidReason?: string | null;
   voidedAt?: string | null;
   voidCdrCode?: string | null;
