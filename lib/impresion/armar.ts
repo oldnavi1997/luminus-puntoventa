@@ -25,8 +25,6 @@ import {
   etiquetaTipoDoc,
   etiquetaUnidad,
   LEYENDA_CONSULTA,
-  LEYENDA_INTERNA,
-  LEYENDA_RECIBO_SALDO,
   LEYENDA_SEE,
   leyendaRepresentacion,
   METODO_PAGO,
@@ -206,11 +204,4 @@ export function construirRepresentacion(entrada: EntradaRepresentacion): Represe
     vendedor: entrada.vendedor,
     aviso,
   };
-}
-
-/** La leyenda del pie cuando el documento no es un comprobante electrónico. */
-export function leyendaInterna(clase: RepresentacionImpresa["clase"]): string | null {
-  if (clase === "NOTA_VENTA") return LEYENDA_INTERNA;
-  if (clase === "RECIBO_SALDO") return LEYENDA_RECIBO_SALDO;
-  return null;
 }

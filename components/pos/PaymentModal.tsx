@@ -5,7 +5,8 @@ import { X, Banknote, CreditCard, Smartphone, CheckCircle, AlertCircle, Clock, P
 import { useCartStore } from "@/stores/cartStore";
 import { formatPEN } from "@/lib/utils";
 import type { PosCustomer, StockSource } from "@/types";
-import { Receipt } from "./Receipt";
+import { ReceiptModal } from "./ReceiptModal";
+import type { RepresentacionImpresa } from "@/lib/impresion/tipos";
 
 interface PaymentModalProps {
   posSessionId: string;
@@ -28,8 +29,8 @@ interface SaleResult {
   cambio: number;
   montoAdelanto?: number | null;
   status: string;
-  pdfUrl?: string | null;
-  qrCode?: string | null;
+  /** Ya armada por el servidor; el ticket la pinta sin volver a pedir nada. */
+  impresion?: RepresentacionImpresa | null;
 }
 
 const PAYMENT_METHODS = [
@@ -517,16 +518,10 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setShowReceipt(true)} className="flex items-center justify-center gap-1.5 bg-surface-light hover:bg-border rounded-xl py-2.5 text-[13px] text-ink transition-colors border border-border">
-                  <Printer size={14} /> Imprimir
-                </button>
-                {saleResult.pdfUrl && (
-                  <a href={saleResult.pdfUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center bg-surface-light hover:bg-border rounded-xl py-2.5 text-[13px] text-ink transition-colors border border-border">
-                    Ver PDF
-                  </a>
-                )}
-              </div>
+              {/* La segunda celda la ocupará el PDF; hasta entonces, una sola. */}
+              <button onClick={() => setShowReceipt(true)} className="w-full flex items-center justify-center gap-1.5 bg-surface-light hover:bg-border rounded-xl py-2.5 text-[13px] text-ink transition-colors border border-border">
+                <Printer size={14} /> Imprimir ticket
+              </button>
               <button onClick={onClose} className="w-full bg-ink hover:bg-ink-2 rounded-xl py-3 text-[14px] font-semibold text-white transition-colors">
                 Nueva venta
               </button>
@@ -557,22 +552,11 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
       </div>
 
       {showReceipt && saleResult && (
-        <Receipt
-          document={{ ...saleResult, montoAdelanto: saleResult.montoAdelanto ?? null }}
-          items={saleItems.map((i) => {
-            const unit = (i.editedPrice ?? i.price) + (i.lensPrice ?? 0);
-            return {
-              description: i.name,
-              quantity: i.quantity,
-              unitPrice: unit,
-              lineTotal: unit * i.quantity,
-              sku: i.sku ?? null,
-            };
-          })}
-          buyerName={saleCustomer?.name}
-          buyerDoc={saleCustomer ? `${saleCustomer.docType} ${saleCustomer.docNumber}` : undefined}
-          paymentMethod={method}
-          montoRecibido={method === "EFECTIVO" && efectivoAmount ? parseFloat(efectivoAmount) : undefined}
+        // `impresion` viene con la respuesta de la venta, así que imprimir
+        // justo después de cobrar no espera a ninguna petición.
+        <ReceiptModal
+          documentId={saleResult.id}
+          rep={saleResult.impresion ?? null}
           onClose={() => setShowReceipt(false)}
         />
       )}

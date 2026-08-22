@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { ChevronDown, ChevronRight, Receipt as ReceiptIcon, X, Trash2, Pencil, Phone, User, Printer, Search, Undo2, IdCard } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
-import { Receipt } from "@/components/pos/Receipt";
+import { ReceiptModal } from "@/components/pos/ReceiptModal";
 import type { PrescriptionData } from "@/types";
 import { TIPOS_DOCUMENTO, tieneDocumento, validarDocumento } from "@/lib/documento";
 
@@ -567,35 +567,7 @@ export function VentasView() {
       )}
 
       {printDoc && (
-        <Receipt
-          document={{
-            id: printDoc.id,
-            fullNumber: printDoc.fullNumber,
-            total: printDoc.total,
-            cambio: 0,
-            montoAdelanto: printDoc.montoAdelanto ?? null,
-            status: printDoc.status,
-            pdfUrl: null,
-            qrCode: null,
-          }}
-          items={printDoc.items.map((i) => ({
-            description: i.description,
-            quantity: i.quantity,
-            unitPrice: i.lineTotal / i.quantity,
-            lineTotal: i.lineTotal,
-            sku: i.sku,
-          }))}
-          buyerName={printDoc.buyerName ?? undefined}
-          buyerDoc={
-            tieneDocumento(printDoc.buyerDocNumber)
-              ? `${printDoc.buyerDocType ?? "DNI"} ${printDoc.buyerDocNumber}`
-              : undefined
-          }
-          fecha={printDoc.createdAt}
-          paymentMethod={printDoc.paymentMethod}
-          cashierName={printDoc.cashier.name ?? undefined}
-          onClose={() => setPrintDoc(null)}
-        />
+        <ReceiptModal documentId={printDoc.id} onClose={() => setPrintDoc(null)} />
       )}
     </div>
   );

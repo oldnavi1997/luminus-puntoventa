@@ -72,3 +72,17 @@ export function leyendaRepresentacion(titulo: string): string {
 /** Un documento que SUNAT no conoce no puede llamarse representación impresa de nada. */
 export const LEYENDA_INTERNA = "DOCUMENTO INTERNO — NO ES COMPROBANTE DE PAGO ELECTRÓNICO";
 export const LEYENDA_RECIBO_SALDO = "RECIBO DE COBRO DE SALDO — NO ES COMPROBANTE DE PAGO";
+
+/**
+ * La leyenda del pie cuando el documento no es un comprobante electrónico.
+ *
+ * Vive aquí y no en `armar.ts` porque la consume el ticket, que es un
+ * componente de cliente: `armar.ts` importa los enums de Prisma como valores
+ * y eso arrastraría el cliente de Prisma —y con él módulos de Node— al bundle
+ * del navegador. El build lo detecta, pero mejor no llegar ahí.
+ */
+export function leyendaInterna(clase: string): string | null {
+  if (clase === "NOTA_VENTA") return LEYENDA_INTERNA;
+  if (clase === "RECIBO_SALDO") return LEYENDA_RECIBO_SALDO;
+  return null;
+}

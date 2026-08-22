@@ -6,6 +6,7 @@ import { z } from "zod";
 import { calcularIGV } from "@/lib/sunat";
 import { enqueueDocument } from "@/lib/queue";
 import { emitirComprobante } from "@/lib/sunat/emitir";
+import { cargarRepresentacion } from "@/lib/impresion/cargar";
 import { getLensLabel } from "@/lib/lens-tree";
 import { DocumentType, DocumentStatus } from "@/app/generated/prisma/client";
 import { reservarCorrelativo } from "@/lib/document-serie";
@@ -163,6 +164,21 @@ const VentaSchema = z.object({
     customerId: z.string().nullish(),
   }).optional(),
 });
+
+/**
+ * La representación impresa de la venta recién creada.
+ *
+ * Nunca lanza: si falla, el ticket la pedirá por su cuenta. Una venta
+ * cobrada no puede fallar porque no se pudo preparar un papel.
+ */
+async function representacionONada(documentId: string) {
+  try {
+    return await cargarRepresentacion(documentId);
+  } catch (err) {
+    console.error("[ventas] no se pudo preparar la impresión:", err);
+    return null;
+  }
+}
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -355,8 +371,9 @@ export async function POST(req: NextRequest) {
         cambio: Number(doc.cambio ?? 0),
         montoAdelanto: doc.montoAdelanto ? Number(doc.montoAdelanto) : null,
         status: esAdelanto ? "PARTIAL" : "ACCEPTED",
-        pdfUrl: null,
-        qrCode: null,
+        // Lo que hace falta para imprimir, ya armado: así el ticket sale sin
+        // esperar otra petición, que es cuando el cajero tiene a alguien delante.
+        impresion: await representacionONada(doc.id),
       });
     }
 
@@ -377,8 +394,7 @@ export async function POST(req: NextRequest) {
       total: Number(doc.total),
       cambio: Number(doc.cambio ?? 0),
       status: emision.estadoDocumento,
-      pdfUrl: null,
-      qrCode: null,
+      impresion: await representacionONada(doc.id),
       sunat: {
         aceptado: emision.aceptado,
         codigo: emision.codigo,

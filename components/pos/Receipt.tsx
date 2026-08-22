@@ -2,65 +2,75 @@
 
 import { useRef } from "react";
 import { useReactToPrint } from "react-to-print";
-import { X, Printer } from "lucide-react";
-import { numeroALetras } from "@/lib/numero-letras";
+import { Printer, X } from "lucide-react";
+import type { RepresentacionImpresa } from "@/lib/impresion/tipos";
+import { leyendaInterna } from "@/lib/impresion/etiquetas";
 
-interface ReceiptItem {
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  lineTotal: number;
-  sku?: string | null;
+/**
+ * El ticket de 80 mm.
+ *
+ * Es presentacional puro: recibe la representación ya armada y sólo la pinta.
+ * Antes derivaba el título del prefijo del `fullNumber`, componía el monto en
+ * letras y llevaba la cabecera de la empresa escrita a mano; todo eso vive
+ * ahora en `lib/impresion`, que es también lo que consume el PDF.
+ *
+ * Los estilos van en línea a propósito. `react-to-print` clona el nodo a un
+ * iframe y copia las hojas del documento; con Tailwind v4 no hay garantía de
+ * que llegue todo, y unos estilos en línea no dependen de eso.
+ */
+
+/** Las térmicas de 80 mm imprimen 72 mm útiles (576 dots). */
+const ANCHO_MM = 72;
+/** Ese mismo ancho en píxeles a 96 dpi, para la vista previa en pantalla. */
+const ANCHO_PREVIEW_PX = Math.round((ANCHO_MM / 25.4) * 96);
+
+/**
+ * Sin `size` el navegador maqueta A4 y el ticket sale a escala equivocada o
+ * paginado. Y `app/globals.css` fija `html, body { height:100%; overflow:hidden }`,
+ * que react-to-print copia al iframe y recortaría un ticket más alto que el
+ * viewport: de ahí los `!important`, que son deliberados.
+ */
+const ESTILO_PAGINA = `
+  @page { size: ${ANCHO_MM}mm auto; margin: 0; }
+  html, body {
+    width: ${ANCHO_MM}mm;
+    margin: 0;
+    padding: 0;
+    height: auto !important;
+    overflow: visible !important;
+  }
+`;
+
+const soles = (n: number) => `S/ ${n.toFixed(2)}`;
+
+const hr: React.CSSProperties = { border: "none", borderTop: "1px dashed #000", margin: "5px 0" };
+const centrado: React.CSSProperties = { textAlign: "center", margin: "1px 0" };
+
+function Fila({ etiqueta, valor, fuerte }: { etiqueta: string; valor: string; fuerte?: boolean }) {
+  return (
+    <tr>
+      <td style={{ paddingRight: "4px", fontWeight: fuerte ? "bold" : undefined }}>{etiqueta}</td>
+      <td style={{ textAlign: "right", fontWeight: fuerte ? "bold" : undefined }}>{valor}</td>
+    </tr>
+  );
 }
 
-interface ReceiptProps {
-  document: {
-    id: string;
-    fullNumber: string;
-    total: number;
-    cambio?: number;
-    montoAdelanto?: number | null;
-    status: string;
-    pdfUrl?: string | null;
-    qrCode?: string | null;
-  };
-  items: ReceiptItem[];
-  buyerName?: string;
-  buyerDoc?: string;
-  /** ISO de la venta. Sin esto el ticket reimpreso sale con la fecha de hoy. */
-  fecha?: string;
-  paymentMethod?: string;
-  montoRecibido?: number;
-  cashierName?: string;
-  onClose: () => void;
-}
-
-export function Receipt({ document, items, buyerName, buyerDoc, fecha: fechaVenta, paymentMethod, montoRecibido, cashierName, onClose }: ReceiptProps) {
-  const esAdelanto = document.status === "PARTIAL" && document.montoAdelanto != null;
+export function Receipt({ rep, onClose }: { rep: RepresentacionImpresa; onClose: () => void }) {
   const printRef = useRef<HTMLDivElement>(null);
+
   const handlePrint = useReactToPrint({
     contentRef: printRef,
-    pageStyle: `
-      @page { margin: 0; }
-      body  { margin: 0; padding: 0; }
-    `,
+    pageStyle: ESTILO_PAGINA,
+    // El QR es un data-URL ya pintado en la vista previa, así que normalmente
+    // está decodificado. Esto cubre el caso en que no lo esté: un QR sin
+    // decodificar sale como un recuadro en blanco en el papel.
+    onBeforePrint: async () => {
+      const imgs = printRef.current?.querySelectorAll("img") ?? [];
+      await Promise.all([...imgs].map((i) => i.decode().catch(() => undefined)));
+    },
   });
 
-  const total = document.total;
-  const isNotaVenta = document.fullNumber.startsWith("NV");
-  const isFactura = document.fullNumber.startsWith("F");
-  const emitidoEn = fechaVenta ? new Date(fechaVenta) : new Date();
-  const fecha = emitidoEn.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Lima" });
-  const hora = emitidoEn.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", timeZone: "America/Lima" });
-
-  const docTitle = isNotaVenta
-    ? "NOTA DE VENTA"
-    : isFactura
-      ? "FACTURA ELECTRÓNICA"
-      : "BOLETA DE VENTA ELECTRÓNICA";
-
-  const rowStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", marginBottom: "1px" };
-  const hrStyle: React.CSSProperties = { border: "none", borderTop: "1px dashed #000", margin: "5px 0" };
+  const interna = leyendaInterna(rep.clase);
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
@@ -72,172 +82,195 @@ export function Receipt({ document, items, buyerName, buyerDoc, fecha: fechaVent
           </button>
         </div>
 
-        {/* Receipt preview */}
         <div className="p-4 overflow-y-auto max-h-[65vh]">
-          {/* Wrapper de preview: ancho fijo solo en pantalla */}
-          <div style={{ width: "302px", margin: "0 auto" }}>
-          <div
-            ref={printRef}
-            style={{
-              fontFamily: "Verdana, Geneva, sans-serif",
-              fontSize: "10px",
-              color: "#000",
-              background: "#fff",
-              padding: "6px 8px",
-              width: "100%",
-              boxSizing: "border-box",
-            }}
-          >
-            {/* Header empresa */}
-            <div style={{ textAlign: "center", marginBottom: "6px" }}>
-              <p style={{ fontWeight: "bold", fontSize: "18px", letterSpacing: "3px", margin: 0 }}>LUMINUS</p>
-              <p style={{ fontSize: "10px", letterSpacing: "5px", margin: "0 0 4px 0" }}>EYEWEAR</p>
-              <p style={{ margin: "1px 0" }}>LUMINUS S.A.C.</p>
-              <p style={{ margin: "1px 0" }}>CALLE MORAL 107</p>
-              <p style={{ margin: "1px 0" }}>+51932079598</p>
-              <p style={{ margin: "1px 0" }}>TIENDA MORAL</p>
-              <p style={{ margin: "1px 0" }}>VENTAS@LUMINUSEYEWEAR.COM</p>
-            </div>
+          {/* Ancho fijo sólo en pantalla; al imprimir manda el @page. */}
+          <div style={{ width: `${ANCHO_PREVIEW_PX}px`, margin: "0 auto" }}>
+            <div
+              ref={printRef}
+              style={{
+                fontFamily: "Verdana, Geneva, sans-serif",
+                fontSize: "10px",
+                color: "#000",
+                background: "#fff",
+                padding: "6px 8px",
+                width: "100%",
+                boxSizing: "border-box",
+              }}
+            >
+              {/* ── Emisor ─────────────────────────────────────────────── */}
+              <div style={{ textAlign: "center", marginBottom: "6px" }}>
+                <p style={{ fontWeight: "bold", fontSize: "16px", letterSpacing: "2px", margin: 0 }}>
+                  {rep.emisor.nombreComercial}
+                </p>
+                <p style={{ ...centrado, marginTop: "4px" }}>{rep.emisor.razonSocial}</p>
+                {/* El RUC es obligatorio en la representación impresa y hasta
+                    ahora no salía en el ticket. */}
+                <p style={{ ...centrado, fontWeight: "bold" }}>RUC {rep.emisor.ruc}</p>
+                {rep.emisor.domicilioFiscal && <p style={centrado}>{rep.emisor.domicilioFiscal}</p>}
+                {rep.emisor.sucursal && <p style={centrado}>SUCURSAL: {rep.emisor.sucursal}</p>}
+                {rep.emisor.direccionSucursal && <p style={centrado}>{rep.emisor.direccionSucursal}</p>}
+                {rep.emisor.telefono && <p style={centrado}>{rep.emisor.telefono}</p>}
+                {rep.emisor.email && <p style={centrado}>{rep.emisor.email}</p>}
+              </div>
 
-            <hr style={hrStyle} />
+              <hr style={hr} />
 
-            {/* Tipo de documento */}
-            <div style={{ textAlign: "center", margin: "4px 0" }}>
-              <p style={{ fontWeight: "bold", fontSize: "11px", margin: "0 0 1px 0" }}>{docTitle}</p>
-              <p style={{ fontWeight: "bold", margin: 0 }}>{document.fullNumber}</p>
-            </div>
+              <div style={{ textAlign: "center", margin: "4px 0" }}>
+                <p style={{ fontWeight: "bold", fontSize: "11px", margin: "0 0 1px 0" }}>
+                  {rep.documento.titulo}
+                </p>
+                <p style={{ fontWeight: "bold", margin: 0 }}>{rep.documento.fullNumber}</p>
+              </div>
 
-            <hr style={hrStyle} />
+              {rep.aviso && (
+                <p
+                  style={{
+                    textAlign: "center",
+                    fontWeight: "bold",
+                    fontSize: "11px",
+                    border: "1px solid #000",
+                    padding: "2px",
+                    margin: "4px 0",
+                  }}
+                >
+                  {rep.aviso}
+                </p>
+              )}
 
-            {/* Datos */}
-            <table style={{ width: "100%", marginBottom: "4px", borderCollapse: "collapse" }}>
-              <tbody>
-                <tr>
-                  <td style={{ paddingRight: "4px" }}>FECHA</td>
-                  <td style={{ textAlign: "right" }}>{fecha}</td>
-                </tr>
-                <tr>
-                  <td>HORA</td>
-                  <td style={{ textAlign: "right" }}>{hora}</td>
-                </tr>
-                <tr>
-                  <td>FECHA ENTREGA</td>
-                  <td style={{ textAlign: "right" }}>{fecha}</td>
-                </tr>
-                <tr>
-                  <td>CLIENTE</td>
-                  <td style={{ textAlign: "right" }}>{buyerName ?? "CONSUMIDOR FINAL"}</td>
-                </tr>
-                {buyerDoc && (
-                  <tr>
-                    <td>DOC.</td>
-                    <td style={{ textAlign: "right" }}>{buyerDoc}</td>
-                  </tr>
-                )}
-                <tr>
-                  <td>CONDICIÓN DE PAGO</td>
-                  <td style={{ textAlign: "right" }}>CONTADO</td>
-                </tr>
-                {cashierName && (
-                  <tr>
-                    <td>VENDEDOR</td>
-                    <td style={{ textAlign: "right" }}>{cashierName}</td>
-                  </tr>
-                )}
-                <tr>
-                  <td>MONEDA</td>
-                  <td style={{ textAlign: "right" }}>SOL</td>
-                </tr>
-              </tbody>
-            </table>
+              <hr style={hr} />
 
-            <hr style={hrStyle} />
+              {/* ── Datos ──────────────────────────────────────────────── */}
+              <table style={{ width: "100%", marginBottom: "4px", borderCollapse: "collapse" }}>
+                <tbody>
+                  <Fila etiqueta="FECHA" valor={rep.documento.fechaEmision} />
+                  <Fila etiqueta="HORA" valor={rep.documento.horaEmision} />
+                  <Fila etiqueta="CLIENTE" valor={rep.adquirente.nombre} />
+                  {rep.adquirente.numeroDoc && (
+                    <Fila
+                      etiqueta={rep.adquirente.tipoDocEtiqueta.toUpperCase()}
+                      valor={rep.adquirente.numeroDoc}
+                    />
+                  )}
+                  <Fila etiqueta="CONDICIÓN DE PAGO" valor={rep.pago.condicion} />
+                  {rep.vendedor && <Fila etiqueta="VENDEDOR" valor={rep.vendedor} />}
+                  <Fila etiqueta="MONEDA" valor={rep.documento.moneda} />
+                </tbody>
+              </table>
 
-            {/* Encabezado items */}
-            <div style={{ display: "flex", gap: "3px", fontWeight: "bold", borderBottom: "1px solid #000", paddingBottom: "2px", marginBottom: "3px", fontSize: "9px" }}>
-              <span style={{ width: "36px", flexShrink: 0 }}>SKU</span>
-              <span style={{ flex: 1 }}>PRODUCTO</span>
-              <span style={{ width: "22px", textAlign: "right", flexShrink: 0 }}>UND</span>
-              <span style={{ width: "38px", textAlign: "right", flexShrink: 0 }}>UNIT</span>
-              <span style={{ width: "42px", textAlign: "right", flexShrink: 0 }}>TOTAL</span>
-            </div>
+              <hr style={hr} />
 
-            {/* Items */}
-            {items.length > 0 ? (
-              items.map((item, i) => (
-                <div key={i} style={{ display: "flex", gap: "3px", marginBottom: "3px", fontSize: "9px" }}>
-                  <span style={{ width: "36px", flexShrink: 0, overflow: "hidden" }}>{item.sku ?? ""}</span>
-                  <span style={{ flex: 1, wordBreak: "break-word" }}>{item.description}</span>
-                  <span style={{ width: "22px", textAlign: "right", flexShrink: 0 }}>{item.quantity}</span>
-                  <span style={{ width: "38px", textAlign: "right", flexShrink: 0 }}>{item.unitPrice.toFixed(2)}</span>
-                  <span style={{ width: "42px", textAlign: "right", flexShrink: 0 }}>{item.lineTotal.toFixed(2)}</span>
+              {/* ── Ítems ──────────────────────────────────────────────── */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "3px",
+                  fontWeight: "bold",
+                  borderBottom: "1px solid #000",
+                  paddingBottom: "2px",
+                  marginBottom: "3px",
+                  fontSize: "9px",
+                }}
+              >
+                <span style={{ width: "34px", flexShrink: 0 }}>COD.</span>
+                <span style={{ flex: 1 }}>PRODUCTO</span>
+                <span style={{ width: "20px", textAlign: "right", flexShrink: 0 }}>CANT</span>
+                <span style={{ width: "38px", textAlign: "right", flexShrink: 0 }}>P.UNIT</span>
+                <span style={{ width: "42px", textAlign: "right", flexShrink: 0 }}>IMPORTE</span>
+              </div>
+
+              {rep.items.map((item) => (
+                <div
+                  key={item.numero}
+                  style={{ display: "flex", gap: "3px", marginBottom: "3px", fontSize: "9px" }}
+                >
+                  <span style={{ width: "34px", flexShrink: 0, overflow: "hidden" }}>{item.codigo ?? ""}</span>
+                  <span style={{ flex: 1, wordBreak: "break-word" }}>{item.descripcion}</span>
+                  <span style={{ width: "20px", textAlign: "right", flexShrink: 0 }}>{item.cantidad}</span>
+                  <span style={{ width: "38px", textAlign: "right", flexShrink: 0 }}>
+                    {item.precioUnitario.toFixed(2)}
+                  </span>
+                  <span style={{ width: "42px", textAlign: "right", flexShrink: 0 }}>
+                    {item.importe.toFixed(2)}
+                  </span>
                 </div>
-              ))
-            ) : (
-              <p style={{ fontStyle: "italic", color: "#666", fontSize: "9px" }}>Ver documento para detalle</p>
-            )}
+              ))}
 
-            <hr style={hrStyle} />
+              <hr style={hr} />
 
-            {/* Totales */}
-            <table style={{ width: "100%", marginBottom: "4px", borderCollapse: "collapse" }}>
-              <tbody>
-                <tr>
-                  <td style={{ paddingRight: "4px" }}>TOTAL DE LA VENTA</td>
-                  <td style={{ textAlign: "right", fontWeight: "bold" }}>S/ {total.toFixed(2)}</td>
-                </tr>
-                {esAdelanto ? (
-                  <>
-                    <tr>
-                      <td>ADELANTO RECIBIDO</td>
-                      <td style={{ textAlign: "right", fontWeight: "bold" }}>S/ {document.montoAdelanto!.toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td style={{ fontWeight: "bold" }}>SALDO PENDIENTE</td>
-                      <td style={{ textAlign: "right", fontWeight: "bold" }}>S/ {(total - document.montoAdelanto!).toFixed(2)}</td>
-                    </tr>
-                  </>
-                ) : (
-                  <>
-                    <tr>
-                      <td>TOTAL A PAGAR</td>
-                      <td style={{ textAlign: "right", fontWeight: "bold" }}>S/ {total.toFixed(2)}</td>
-                    </tr>
-                    {montoRecibido != null && (
-                      <tr>
-                        <td>PAGADO</td>
-                        <td style={{ textAlign: "right" }}>S/ {montoRecibido.toFixed(2)}</td>
-                      </tr>
-                    )}
-                    {paymentMethod === "EFECTIVO" && document.cambio != null && document.cambio >= 0 && (
-                      <tr>
-                        <td>VUELTO</td>
-                        <td style={{ textAlign: "right" }}>S/ {document.cambio.toFixed(2)}</td>
-                      </tr>
-                    )}
-                  </>
-                )}
-              </tbody>
-            </table>
+              {/* ── Totales ────────────────────────────────────────────── */}
+              <table style={{ width: "100%", marginBottom: "4px", borderCollapse: "collapse" }}>
+                <tbody>
+                  <Fila etiqueta="OP. GRAVADAS" valor={soles(rep.totales.opGravadas)} />
+                  <Fila etiqueta="I.G.V. (18%)" valor={soles(rep.totales.igv)} />
+                  {rep.totales.descuento > 0 && (
+                    <Fila etiqueta="DESCUENTO" valor={soles(rep.totales.descuento)} />
+                  )}
+                  <Fila etiqueta="IMPORTE TOTAL" valor={soles(rep.totales.total)} fuerte />
 
-            <hr style={hrStyle} />
+                  {rep.pago.adelanto != null ? (
+                    <>
+                      <Fila etiqueta="ADELANTO RECIBIDO" valor={soles(rep.pago.adelanto)} fuerte />
+                      <Fila
+                        etiqueta="SALDO PENDIENTE"
+                        valor={soles(rep.pago.saldoPendiente ?? 0)}
+                        fuerte
+                      />
+                    </>
+                  ) : (
+                    <>
+                      {rep.pago.desglose.map((d) => (
+                        <Fila key={d.etiqueta} etiqueta={d.etiqueta.toUpperCase()} valor={soles(d.monto)} />
+                      ))}
+                      {rep.pago.montoRecibido != null && (
+                        <Fila etiqueta="PAGADO" valor={soles(rep.pago.montoRecibido)} />
+                      )}
+                      {rep.pago.cambio != null && rep.pago.cambio > 0 && (
+                        <Fila etiqueta="VUELTO" valor={soles(rep.pago.cambio)} />
+                      )}
+                    </>
+                  )}
+                </tbody>
+              </table>
 
-            {/* Monto en letras */}
-            <p style={{ fontWeight: "bold", wordBreak: "break-word", margin: "3px 0" }}>
-              SON: {numeroALetras(total)}
-            </p>
+              <hr style={hr} />
 
-            <hr style={hrStyle} />
-
-            {/* Footer */}
-            <p style={{ textAlign: "center", marginTop: "4px", fontSize: "9px" }}>Gracias por su compra</p>
-            {!isNotaVenta && document.qrCode && (
-              <p style={{ textAlign: "center", fontSize: "8px", wordBreak: "break-all", marginTop: "3px", color: "#666" }}>
-                {document.qrCode.substring(0, 60)}...
+              <p style={{ fontWeight: "bold", wordBreak: "break-word", margin: "3px 0" }}>
+                SON: {rep.totales.totalLetras}
               </p>
-            )}
+
+              <hr style={hr} />
+
+              {/* ── Pie legal ──────────────────────────────────────────── */}
+              {rep.sunat ? (
+                <div style={{ textAlign: "center", marginTop: "6px" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- data-URL generado en el servidor, no es un asset */}
+                  <img
+                    src={rep.sunat.qrDataUrl}
+                    alt="Código QR del comprobante"
+                    style={{ width: "40mm", height: "40mm", display: "block", margin: "0 auto" }}
+                  />
+                  {rep.sunat.hash && (
+                    <p style={{ fontSize: "8px", wordBreak: "break-all", margin: "3px 0" }}>
+                      Valor resumen: {rep.sunat.hash}
+                    </p>
+                  )}
+                  {rep.sunat.leyendas.map((l) => (
+                    <p key={l} style={{ fontSize: "7.5px", margin: "2px 0", wordBreak: "break-word" }}>
+                      {l}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                interna && (
+                  <p style={{ textAlign: "center", fontWeight: "bold", fontSize: "8.5px", margin: "4px 0" }}>
+                    {interna}
+                  </p>
+                )
+              )}
+
+              <p style={{ textAlign: "center", marginTop: "6px", fontSize: "9px" }}>Gracias por su compra</p>
+            </div>
           </div>
-          </div>{/* fin wrapper preview */}
         </div>
 
         <div className="px-4 pb-4">

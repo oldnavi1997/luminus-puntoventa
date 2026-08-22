@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X, Banknote, CreditCard, Smartphone, Layers, CheckCircle, AlertCircle, Printer } from "lucide-react";
 import { formatPEN } from "@/lib/utils";
-import { Receipt } from "@/components/pos/Receipt";
+import { ReceiptModal } from "@/components/pos/ReceiptModal";
 
 interface PendienteDoc {
   id: string;
@@ -366,22 +366,12 @@ export function CobrarSaldoModal({ doc, posSessionId, onSuccess, onClose }: Cobr
     </div>
 
     {printing && (
-      <Receipt
-        document={{
-          id:           doc.id,
-          fullNumber:   doc.fullNumber,
-          total:        doc.total,
-          cambio:       method === "EFECTIVO" ? cambio : 0,
-          montoAdelanto: null,
-          status:       "ACCEPTED",
-          pdfUrl:       null,
-          qrCode:       null,
-        }}
-        items={doc.items}
-        buyerName={doc.buyerName ?? undefined}
-        buyerDoc={doc.buyerDocNumber && doc.buyerDocNumber !== "00000000" ? doc.buyerDocNumber : undefined}
-        paymentMethod={method}
-        montoRecibido={method === "EFECTIVO" ? parseFloat(efectivoAmount) : doc.total}
+      // Es un recibo del saldo cobrado, no un comprobante: la clase se pide
+      // explícitamente y el efectivo entregado va aparte porque no se persiste.
+      <ReceiptModal
+        documentId={doc.id}
+        clase="RECIBO_SALDO"
+        recibido={method === "EFECTIVO" ? parseFloat(efectivoAmount) : undefined}
         onClose={() => setPrinting(false)}
       />
     )}
