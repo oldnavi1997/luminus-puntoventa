@@ -4,7 +4,6 @@ import { useRef } from "react";
 import { useReactToPrint } from "react-to-print";
 import { Printer, X } from "lucide-react";
 import type { RepresentacionImpresa } from "@/lib/impresion/tipos";
-import { leyendaInterna } from "@/lib/impresion/etiquetas";
 
 /**
  * El ticket de 80 mm.
@@ -69,8 +68,6 @@ export function Receipt({ rep, onClose }: { rep: RepresentacionImpresa; onClose:
       await Promise.all([...imgs].map((i) => i.decode().catch(() => undefined)));
     },
   });
-
-  const interna = leyendaInterna(rep.clase);
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
@@ -200,8 +197,15 @@ export function Receipt({ rep, onClose }: { rep: RepresentacionImpresa; onClose:
               {/* ── Totales ────────────────────────────────────────────── */}
               <table style={{ width: "100%", marginBottom: "4px", borderCollapse: "collapse" }}>
                 <tbody>
-                  <Fila etiqueta="OP. GRAVADAS" valor={soles(rep.totales.opGravadas)} />
-                  <Fila etiqueta="I.G.V. (18%)" valor={soles(rep.totales.igv)} />
+                  {/* Sólo un comprobante desglosa impuestos. Aquí manda la clase y no
+                      `rep.sunat`: ese también es null en una boleta pendiente o
+                      rechazada, y una boleta declara IGV la conteste SUNAT o no. */}
+                  {rep.clase === "COMPROBANTE" && (
+                    <>
+                      <Fila etiqueta="OP. GRAVADAS" valor={soles(rep.totales.opGravadas)} />
+                      <Fila etiqueta="I.G.V. (18%)" valor={soles(rep.totales.igv)} />
+                    </>
+                  )}
                   {rep.totales.descuento > 0 && (
                     <Fila etiqueta="DESCUENTO" valor={soles(rep.totales.descuento)} />
                   )}
@@ -241,7 +245,7 @@ export function Receipt({ rep, onClose }: { rep: RepresentacionImpresa; onClose:
               <hr style={hr} />
 
               {/* ── Pie legal ──────────────────────────────────────────── */}
-              {rep.sunat ? (
+              {rep.sunat && (
                 <div style={{ textAlign: "center", marginTop: "6px" }}>
                   {/* eslint-disable-next-line @next/next/no-img-element -- data-URL generado en el servidor, no es un asset */}
                   <img
@@ -260,12 +264,6 @@ export function Receipt({ rep, onClose }: { rep: RepresentacionImpresa; onClose:
                     </p>
                   ))}
                 </div>
-              ) : (
-                interna && (
-                  <p style={{ textAlign: "center", fontWeight: "bold", fontSize: "8.5px", margin: "4px 0" }}>
-                    {interna}
-                  </p>
-                )
               )}
 
               <p style={{ textAlign: "center", marginTop: "6px", fontSize: "9px" }}>Gracias por su compra</p>
