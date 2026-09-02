@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Search, Plus, Package, ChevronLeft, ChevronRight, X, Trash2 } from "lucide-react";
+import { Search, Plus, Package, ChevronLeft, ChevronRight, X, Trash2, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
 import { ORIGEN_DE, ORIGEN_LABEL, type TipoMovimiento } from "@/lib/stock-movimiento";
@@ -29,9 +30,24 @@ interface Stats {
   totalValue: number;
   lowCount: number;
   outCount: number;
+  inactiveCount: number;
 }
 
 type StockFilter = "all" | "low" | "out";
+
+/**
+ * Borrar un producto que ya tiene ventas no lo borra: lo desactiva (la línea del
+ * comprobante lo referencia y la base impide quitarlo de en medio). Ese producto
+ * desaparecía del POS sin dejar rastro y sólo se podía recuperar desde el panel
+ * del ecommerce. Este filtro es la papelera.
+ */
+type EstadoFilter = "activos" | "inactivos" | "todos";
+
+const ESTADO_LABEL: Record<EstadoFilter, string> = {
+  activos:   "Activos",
+  inactivos: "Desactivados",
+  todos:     "Todos",
+};
 
 const PAGE_SIZE = 48;
 
@@ -620,13 +636,15 @@ export function InventoryView() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<StockFilter>("all");
+  const [estado, setEstado] = useState<EstadoFilter>("activos");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalFiltered, setTotalFiltered] = useState(0);
   const [stats, setStats] = useState<Stats>({
-    total: 0, totalUnits: 0, totalValue: 0, lowCount: 0, outCount: 0,
+    total: 0, totalUnits: 0, totalValue: 0, lowCount: 0, outCount: 0, inactiveCount: 0,
   });
+  const [reactivando, setReactivando] = useState<string | null>(null);
   const [editing,    setEditing]    = useState<Product | null>(null);
   const [showNew,    setShowNew]    = useState(false);
 
@@ -635,14 +653,16 @@ export function InventoryView() {
     return () => clearTimeout(t);
   }, [query]);
 
-  useEffect(() => { setPage(1); }, [debouncedQuery, filter]);
+  useEffect(() => { setPage(1); }, [debouncedQuery, filter, estado]);
 
-  useEffect(() => {
+  const refrescarStats = useCallback(() => {
     fetch("/api/productos/stats")
       .then((r) => r.json())
       .then((d) => setStats(d))
       .catch(() => {});
   }, []);
+
+  useEffect(() => { refrescarStats(); }, [refrescarStats]);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -651,29 +671,51 @@ export function InventoryView() {
     params.set("page", String(page));
     if (debouncedQuery) params.set("q", debouncedQuery);
     if (filter !== "all") params.set("stockFilter", filter);
+    if (estado !== "activos") params.set("estado", estado);
     const res = await fetch(`/api/productos?${params}`);
     const json = await res.json();
     setProducts(json.products ?? []);
     setTotalPages(json.pages ?? 1);
     setTotalFiltered(json.total ?? 0);
     setLoading(false);
-  }, [debouncedQuery, filter, page]);
+  }, [debouncedQuery, filter, estado, page]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
   function handleSaved(updated: Product) {
     setProducts((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
-    fetch("/api/productos/stats").then((r) => r.json()).then((d) => setStats(d)).catch(() => {});
+    refrescarStats();
   }
 
   function handleDeleted(id: string) {
     setProducts((prev) => prev.filter((p) => p.id !== id));
-    fetch("/api/productos/stats").then((r) => r.json()).then((d) => setStats(d)).catch(() => {});
+    refrescarStats();
+  }
+
+  async function handleReactivar(p: Product) {
+    setReactivando(p.id);
+    try {
+      const res = await fetch(`/api/productos/${p.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: true }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(`"${p.name}" vuelve a estar activo`);
+      // La fila deja de encajar en el filtro "Desactivados", y el conteo de la
+      // página cambia: se recarga en vez de parchear la lista a mano.
+      await fetchProducts();
+      refrescarStats();
+    } catch {
+      toast.error("No se pudo reactivar. Intentá de nuevo.");
+    } finally {
+      setReactivando(null);
+    }
   }
 
   function handleCreated(p: Product) {
     setProducts((prev) => [p, ...prev]);
-    fetch("/api/productos/stats").then((r) => r.json()).then((d) => setStats(d)).catch(() => {});
+    refrescarStats();
   }
 
   const stockState = (p: Product) => {
@@ -703,7 +745,7 @@ export function InventoryView() {
 
       <ModuleHeader
         title="Inventario"
-        subtitle="Control de stock y productos activos"
+        subtitle="Control de stock y productos"
         right={
           <button
             onClick={() => setShowNew(true)}
@@ -757,6 +799,22 @@ export function InventoryView() {
                 </button>
               ))}
             </div>
+            <div className="flex bg-surface-light rounded-lg p-0.5 gap-0.5 border border-border">
+              {(["activos", "inactivos", "todos"] as EstadoFilter[]).map((e) => (
+                <button
+                  key={e}
+                  onClick={() => setEstado(e)}
+                  className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
+                    estado === e ? "bg-surface shadow-sm text-ink" : "text-ink-3"
+                  }`}
+                >
+                  {ESTADO_LABEL[e]}
+                  {e === "inactivos" && stats.inactiveCount > 0 && (
+                    <span className="ml-1.5 text-[11px] font-mono text-ink-4">{stats.inactiveCount}</span>
+                  )}
+                </button>
+              ))}
+            </div>
             <span className="text-[12.5px] text-ink-3 ml-auto">{totalFiltered} productos</span>
           </div>
 
@@ -802,6 +860,11 @@ export function InventoryView() {
                           )}
                           <div className="flex flex-col gap-0.5 min-w-0">
                             <span className="text-[13px] font-medium text-ink leading-tight line-clamp-1">{p.name}</span>
+                            {!p.active && (
+                              <span className="text-[10px] font-medium text-danger bg-danger/10 border border-danger/25 rounded-full px-1.5 py-px w-fit">
+                                desactivado
+                              </span>
+                            )}
                             {!p.trackInventory && (
                               <span className="text-[10px] font-medium text-ink-3 bg-surface-dark border border-border rounded-full px-1.5 py-px w-fit">
                                 sin inventario
@@ -863,12 +926,25 @@ export function InventoryView() {
                       </td>
 
                       <td className="px-4 py-3 border-b border-border text-right">
-                        <button
-                          onClick={() => setEditing(p)}
-                          className="text-[12px] text-ink-3 hover:text-ink bg-surface-light hover:bg-border px-3 py-1 rounded-lg transition-colors border border-border"
-                        >
-                          Editar
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {!p.active && (
+                            <button
+                              onClick={() => handleReactivar(p)}
+                              disabled={reactivando === p.id}
+                              title="Volver a ponerlo a la venta"
+                              className="flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink bg-surface-light hover:bg-border px-3 py-1 rounded-lg transition-colors border border-border disabled:opacity-40"
+                            >
+                              <RotateCcw size={12} />
+                              {reactivando === p.id ? "Reactivando…" : "Reactivar"}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setEditing(p)}
+                            className="text-[12px] text-ink-3 hover:text-ink bg-surface-light hover:bg-border px-3 py-1 rounded-lg transition-colors border border-border"
+                          >
+                            Editar
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

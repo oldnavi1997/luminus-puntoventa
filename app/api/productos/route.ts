@@ -68,6 +68,11 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get("q") ?? "";
   const categoryId = searchParams.get("category") ?? "";
   const stockFilter = searchParams.get("stockFilter") ?? "";
+  // "activos" por defecto: /pos y /movimientos no mandan el parámetro y no deben
+  // ver nunca lo desactivado. "inactivos" es la papelera del inventario —
+  // borrar un producto con ventas no lo borra, lo desactiva (ver DELETE), y sin
+  // esto no había forma de volver a verlo ni de reactivarlo desde el POS.
+  const estado = searchParams.get("estado") ?? "activos";
   const page = parseInt(searchParams.get("page") ?? "1");
   const limit = Math.min(parseInt(searchParams.get("limit") ?? "48"), 96);
   const skip = (page - 1) * limit;
@@ -76,7 +81,7 @@ export async function GET(req: NextRequest) {
   const qStripped = q.replace(/^0+/, "") || q;
 
   const where = {
-    active: true,
+    ...(estado === "todos" ? {} : { active: estado !== "inactivos" }),
     ...(q && {
       OR: [
         { name:  { contains: q, mode: "insensitive" as const } },
