@@ -347,6 +347,45 @@ says only verifiable things and points at SUNAT’s own CPE validator, not at a 
 `SUNAT_RESOLUCION` is empty by default: an invented resolution number on a tax document is
 worse than none.
 
+### El buscador del ecommerce no lee la base
+
+Borrar o editar un producto desde el POS **sí** lo cambia en la web: comparten la
+base y el catálogo, la ficha y la portada la consultan en vivo. La excepción es
+el **buscador** de la web, que lee un índice de Algolia que sólo el ecommerce
+sabe escribir. Durante mucho tiempo el POS no lo avisó, y el resultado, medido
+contra producción el 2026-09-02: 263 productos publicables en la base contra 273
+registros en el índice — 10 de ellos invendibles (5 borrados de la base, que dan
+404 al clicarlos, y 5 desactivados) — más 187 con el nombre, el precio o el stock
+desfasados respecto a la fila.
+
+`lib/reindex-ecommerce.ts` cierra el circuito: manda los ids a
+`POST /api/internal/reindex` del ecommerce con `REINDEX_SECRET`, y allí se decide
+indexar o borrar mirando la base. **El POS no indexa por su cuenta a propósito**
+— eso repartiría la admin key de Algolia y duplicaría aquí la regla de qué
+producto es publicable, que es del ecommerce.
+
+Se avisa desde todo lo que cambia un producto: crear (`POST /api/productos`),
+editar (`PATCH`), borrar (`DELETE`, tanto el borrado real como el soft delete),
+mover stock (`/api/productos/[id]/movimiento`), vender (`POST /api/ventas`),
+borrar una venta y la anulación cuando SUNAT la confirma (`lib/sunat/tickets.ts`).
+
+Tres cosas que no se pueden cambiar sin romperlo:
+
+- **El aviso va SIEMPRE fuera de la transacción.** El ecommerce lee la base con
+  su propia conexión: llamado desde dentro, indexaría los valores de antes del
+  commit.
+- **Nunca lanza.** La venta ya está escrita y el stock descontado; que el
+  buscador quede un minuto desfasado no puede tumbar una operación cerrada. Los
+  fallos se registran en consola y el desfase lo recoge después
+  `npm run algolia:resync` en el ecommerce.
+- **Sin `ECOMMERCE_URL` y `REINDEX_SECRET` el aviso no existe**, y el POS lo dice
+  por consola una vez en lugar de fallar. Las dos variables van también en
+  Railway; el secreto tiene que ser idéntico al del ecommerce.
+
+Los scripts de `scripts/` que tocan productos por fuera de las rutas (sync de
+stock, de precios) tampoco avisan: después de correrlos, cuadrar con
+`npm run algolia:resync` desde el ecommerce.
+
 ### Key Utilities
 
 - `lib/lens-calc.ts` + `lib/calculador-lunas/` — Optical prescription calculation logic
@@ -373,6 +412,8 @@ Copy `.env.example` to `.env.local`. Required:
 | `EMPRESA_SUCURSALES` | JSON keyed by series with each establishment’s name, address and phone. Omit to use the known defaults |
 | `SUNAT_RESOLUCION` | Resolution that designated the electronic issuer. Empty prints no line — do not guess it |
 | `APISUNAT_TOKEN`, `APISUNAT_BASE_URL` | DNI/RUC lookup only — no longer used to emit |
+| `ECOMMERCE_URL` | Base de la web, sin barra final. A donde se avisa que un producto cambió |
+| `REINDEX_SECRET` | Secreto compartido con el ecommerce para ese aviso. Idéntico en los dos. Si falta, el buscador de la web se queda con datos viejos |
 
 Dev database: `postgresql://postgres:75207666@localhost:5433/luminus` (shared with ecommerce, port 5433).
 

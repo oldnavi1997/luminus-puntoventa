@@ -26,6 +26,7 @@ import {
   type Prisma,
 } from "@/app/generated/prisma/client";
 import { documentoConElMovimiento, revertirStockYCaja } from "@/lib/reversion-venta";
+import { reindexarEnEcommerce } from "@/lib/reindex-ecommerce";
 import { getConfigSunat } from "./config";
 import { getStatus, type EstadoTicket } from "./cliente-soap";
 import { extraerCdr } from "./empaquetado";
@@ -285,6 +286,8 @@ async function aplicarVeredicto(
 
   const documentIds = fila.envios.map((e) => e.documentId);
   const { cdrXml } = veredicto;
+  /** Productos cuyo stock devuelve la anulación: hay que avisar al buscador web. */
+  const productosDevueltos: string[] = [];
 
   // Todo junto: el ticket es de un solo uso, así que si el CDR no se guarda
   // ahora no hay forma de volver a pedirlo. Y la reversión va aquí dentro, no
@@ -319,7 +322,7 @@ async function aplicarVeredicto(
 
     for (const documentId of documentIds) {
       if (aceptado) {
-        await deshacerVenta(tx, documentId, veredicto.codigo);
+        productosDevueltos.push(...(await deshacerVenta(tx, documentId, veredicto.codigo)));
       } else {
         await tx.saleDocument.update({
           where: { id: documentId },
@@ -331,6 +334,10 @@ async function aplicarVeredicto(
       }
     }
   });
+
+  // Fuera de la transacción, y sólo cuando SUNAT confirmó: reindexar antes del
+  // commit dejaría al ecommerce leyendo el stock de antes de la devolución.
+  await reindexarEnEcommerce(productosDevueltos);
 
   if (aceptado) resultado.anulados += documentIds.length;
   else resultado.rechazados += documentIds.length;
@@ -348,12 +355,15 @@ async function deshacerVenta(
   tx: Prisma.TransactionClient,
   documentId: string,
   codigoCdr: string,
-): Promise<void> {
+): Promise<string[]> {
   const comprobante = await tx.saleDocument.findUnique({
     where: { id: documentId },
     select: { id: true, notes: true, voidReason: true },
   });
-  if (!comprobante) return;
+  if (!comprobante) return [];
+
+  /** Los productos a los que se les devolvió stock, para reindexar tras el commit. */
+  const devueltos: string[] = [];
 
   const conMovimiento = await documentoConElMovimiento(tx, comprobante);
 
@@ -368,7 +378,8 @@ async function deshacerVenta(
     });
 
     if (venta) {
-      await revertirStockYCaja(tx, venta);
+      const reversion = await revertirStockYCaja(tx, venta);
+      if (reversion.stock) devueltos.push(...venta.items.map((i) => i.productId));
 
       if (conMovimiento.esOrigen) {
         await tx.saleDocument.update({
@@ -387,4 +398,6 @@ async function deshacerVenta(
     where: { id: documentId },
     data: { status: DocumentStatus.VOIDED, voidedAt: new Date(), voidCdrCode: codigoCdr },
   });
+
+  return devueltos;
 }
