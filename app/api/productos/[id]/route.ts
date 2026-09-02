@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { reindexarEnEcommerce } from "@/lib/reindex-ecommerce";
 
 export async function PATCH(
   req: NextRequest,
@@ -37,6 +38,8 @@ export async function PATCH(
     },
   });
 
+  await reindexarEnEcommerce([id]);
+
   return NextResponse.json({
     product: {
       ...product,
@@ -55,12 +58,17 @@ export async function DELETE(
 
   const { id } = await params;
 
+  // Da igual cuál de los dos caminos se tome: el ecommerce mira el id en la base
+  // y, si ya no está o quedó inactivo, lo saca de su buscador. Sin esto el
+  // producto seguía apareciendo allí, con precio viejo y llevando a un 404.
   try {
     await prisma.product.delete({ where: { id } });
+    await reindexarEnEcommerce([id]);
     return NextResponse.json({ ok: true });
   } catch {
     // Tiene ventas asociadas → soft delete
     await prisma.product.update({ where: { id }, data: { active: false } });
+    await reindexarEnEcommerce([id]);
     return NextResponse.json({ ok: true, softDeleted: true });
   }
 }
