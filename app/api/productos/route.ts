@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { reindexarEnEcommerce } from "@/lib/reindex-ecommerce";
+import { compararProductos } from "@/lib/orden-productos";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -99,20 +100,34 @@ export async function GET(req: NextRequest) {
     ...(stockFilter === "out" && { stock: { equals: 0 } }),
   };
 
-  const [products, total] = await Promise.all([
-    prisma.product.findMany({
-      where,
-      include: {
-        categories: {
-          select: { id: true, name: true, requiresLensSelection: true },
+  // El orden es por SKU descendente (ver lib/orden-productos.ts): lo último que
+  // entró arriba. No se puede pedir en el `orderBy` — los SKU son numéricos sin
+  // relleno de ceros, así que el orden de texto los mezcla — de modo que se
+  // traen las claves de orden de todo lo que matchea, se ordena y se corta la
+  // página acá. Ese primer findMany reemplaza al count: siguen siendo dos
+  // consultas, y son tres columnas sin joins sobre un catálogo de cientos.
+  const claves = await prisma.product.findMany({
+    where,
+    select: { id: true, sku: true, name: true },
+  });
+  claves.sort(compararProductos);
+
+  const idsPagina = claves.slice(skip, skip + limit).map((c) => c.id);
+  const filas = idsPagina.length
+    ? await prisma.product.findMany({
+        where: { id: { in: idsPagina } },
+        include: {
+          categories: {
+            select: { id: true, name: true, requiresLensSelection: true },
+          },
         },
-      },
-      orderBy: { name: "asc" },
-      skip,
-      take: limit,
-    }),
-    prisma.product.count({ where }),
-  ]);
+      })
+    : [];
+
+  // Prisma no respeta el orden del `in`.
+  const porId = new Map(filas.map((p) => [p.id, p]));
+  const products = idsPagina.map((id) => porId.get(id)!).filter(Boolean);
+  const total = claves.length;
 
   return NextResponse.json({
     products: products.map((p) => ({

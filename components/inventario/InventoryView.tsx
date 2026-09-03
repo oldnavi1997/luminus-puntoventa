@@ -440,11 +440,26 @@ function NewProductModal({ onClose, onCreated }: NewModalProps) {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [skuSugerido, setSkuSugerido] = useState("");
 
   useEffect(() => {
     fetch("/api/productos/categorias")
       .then((r) => r.json())
       .then((d) => setCategories(d.categories ?? []))
+      .catch(() => {});
+  }, []);
+
+  // El SKU es correlativo, así que se propone el que sigue al más alto. Queda
+  // editable, y sólo se escribe si el campo sigue vacío: si el usuario ya tipeó
+  // algo mientras llegaba la respuesta, manda lo que tipeó.
+  useEffect(() => {
+    fetch("/api/productos/siguiente-sku")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d?.sku) return;
+        setSkuSugerido(d.sku);
+        setForm((f) => (f.sku ? f : { ...f, sku: d.sku }));
+      })
       .catch(() => {});
   }, []);
 
@@ -512,8 +527,22 @@ function NewProductModal({ onClose, onCreated }: NewModalProps) {
                 className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink font-mono focus:outline-none focus:border-accent"
                 value={form.sku}
                 onChange={(e) => set("sku", e.target.value)}
-                placeholder="—"
+                placeholder={skuSugerido || "—"}
               />
+              {skuSugerido && (
+                <p className="text-[11px] text-ink-4 mt-1">
+                  Sugerido: <span className="font-mono">{skuSugerido}</span>
+                  {form.sku !== skuSugerido && (
+                    <button
+                      type="button"
+                      onClick={() => set("sku", skuSugerido)}
+                      className="ml-1.5 text-accent hover:underline"
+                    >
+                      usar
+                    </button>
+                  )}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">Marca</label>
