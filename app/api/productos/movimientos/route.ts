@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { reindexarTrasResponder } from "@/lib/reindex-ecommerce";
 import type { TipoMovimientoStock } from "@/app/generated/prisma/client";
 import {
   esTipoMovimiento,
@@ -12,6 +13,8 @@ import {
   ORIGEN_LABEL,
   esCarreraDeStock,
   esFalloDeMovimiento,
+  movimientoGemeloReciente,
+  haceSegundos,
 } from "@/lib/stock-movimiento";
 
 // Historial de movimientos. Mismo 403 que el POST: el módulo entero es de ADMIN.
@@ -66,7 +69,7 @@ export async function POST(req: NextRequest) {
   if (session.user.role !== "ADMIN") return NextResponse.json({ error: "Prohibido" }, { status: 403 });
 
   const body = await req.json();
-  const { tipo, items, nota } = body;
+  const { tipo, items, nota, forzar } = body;
 
   if (!esTipoMovimiento(tipo)) {
     return NextResponse.json({ error: "Tipo de movimiento inválido" }, { status: 400 });
@@ -96,6 +99,33 @@ export async function POST(req: NextRequest) {
     await prisma.$transaction(async (tx) => {
       const ids = parsed.map((p) => p.productId);
       const products = await tx.product.findMany({ where: { id: { in: ids } } });
+
+      // Un lote entero repetido dentro de la ventana es un reintento de algo que
+      // ya se guardó, no una carga nueva: la transacción es todo o nada, así que
+      // si vuelve igual es porque el cliente no vio la respuesta anterior. Con
+      // que un solo renglón sea distinto, se trata como lote nuevo.
+      if (forzar !== true) {
+        let ultimoGemelo: Date | null = null;
+        for (const item of parsed) {
+          const gemelo = await movimientoGemeloReciente(tx, {
+            productId: item.productId,
+            tipo,
+            cantidad: item.cantidad,
+            userId: session.user.id,
+          });
+          if (!gemelo) { ultimoGemelo = null; break; }
+          if (!ultimoGemelo || gemelo.createdAt > ultimoGemelo) ultimoGemelo = gemelo.createdAt;
+        }
+        if (ultimoGemelo) {
+          throw {
+            status: 409,
+            duplicadoProbable: true,
+            message:
+              `Hace ${haceSegundos(ultimoGemelo)} s ya registraste este mismo lote ` +
+              `(${parsed.length} productos). Si el anterior te dio error, igual se guardó.`,
+          };
+        }
+      }
 
       for (const item of parsed) {
         const product = products.find((p) => p.id === item.productId);
@@ -142,9 +172,20 @@ export async function POST(req: NextRequest) {
       }
     });
 
+    // El lote movía stock sin avisarle al buscador del ecommerce, así que un
+    // ingreso por lote dejaba a Algolia con el stock viejo: el mismo desfase que
+    // el POST de un solo producto ya evitaba. Va después de responder.
+    await reindexarTrasResponder(parsed.map((p) => p.productId));
+
     return NextResponse.json({ ok: true, count: parsed.length });
   } catch (e) {
-    if (esFalloDeMovimiento(e)) return NextResponse.json({ error: e.message }, { status: e.status });
+    if (esFalloDeMovimiento(e)) {
+      return NextResponse.json(
+        { error: e.message, ...(e.duplicadoProbable && { duplicadoProbable: true }) },
+        { status: e.status }
+      );
+    }
+    console.error("[movimientos] fallo no previsto", e);
     return NextResponse.json({ error: "No se pudo registrar el movimiento" }, { status: 500 });
   }
 }

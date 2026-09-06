@@ -78,11 +78,14 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
   const [movTipo, setMovTipo] = useState<TipoMovimiento | null>(null);
   const [movQty, setMovQty] = useState("");
   const [movLoading, setMovLoading] = useState(false);
+  // El backend corta un movimiento idéntico y reciente por si es un reintento
+  // de algo que ya se guardó. Si de verdad es otro, se repite con `forzar`.
+  const [movDuplicado, setMovDuplicado] = useState(false);
 
   const set = (k: string, v: string | boolean) =>
     setForm((f) => ({ ...f, [k]: v }));
 
-  async function handleMovimiento() {
+  async function handleMovimiento(forzar = false) {
     if (!movTipo) return;
     const cantidad = Number(movQty);
     if (!Number.isInteger(cantidad) || cantidad <= 0) {
@@ -96,14 +99,18 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
     }
     setMovLoading(true);
     setError("");
+    setMovDuplicado(false);
     try {
       const res = await fetch(`/api/productos/${product.id}/movimiento`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tipo: movTipo, cantidad }),
+        body: JSON.stringify({ tipo: movTipo, cantidad, ...(forzar && { forzar: true }) }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Error al registrar el movimiento");
+      if (!res.ok) {
+        if (json.duplicadoProbable) setMovDuplicado(true);
+        throw new Error(json.error ?? "Error al registrar el movimiento");
+      }
       onSaved(json.product);
       onClose();
     } catch (e) {
@@ -287,14 +294,14 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
               {movTipo === null ? (
                 <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => { setMovTipo("INGRESO"); setMovQty(""); setError(""); }}
+                    onClick={() => { setMovTipo("INGRESO"); setMovQty(""); setError(""); setMovDuplicado(false); }}
                     title="Sumar unidades nuevas al almacén"
                     className="px-3 py-2 text-[12.5px] font-medium text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors"
                   >
                     📥 Ingreso
                   </button>
                   <button
-                    onClick={() => { setMovTipo("TRASLADO"); setMovQty(""); setError(""); }}
+                    onClick={() => { setMovTipo("TRASLADO"); setMovQty(""); setError(""); setMovDuplicado(false); }}
                     disabled={product.stockAlmacen <= 0}
                     title="Mover de almacén a tienda"
                     className="px-3 py-2 text-[12.5px] font-medium text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors disabled:opacity-40"
@@ -302,7 +309,7 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
                     🔄 A tienda
                   </button>
                   <button
-                    onClick={() => { setMovTipo("RETORNO"); setMovQty(""); setError(""); }}
+                    onClick={() => { setMovTipo("RETORNO"); setMovQty(""); setError(""); setMovDuplicado(false); }}
                     disabled={product.stockTienda <= 0}
                     title="Devolver de tienda a almacén"
                     className="px-3 py-2 text-[12.5px] font-medium text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors disabled:opacity-40"
@@ -330,17 +337,21 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
                       placeholder="Cantidad"
                     />
                     <button
-                      onClick={() => { setMovTipo(null); setMovQty(""); setError(""); }}
+                      onClick={() => { setMovTipo(null); setMovQty(""); setError(""); setMovDuplicado(false); }}
                       className="px-3 py-2 text-[12.5px] text-ink-3 hover:text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors"
                     >
                       Cancelar
                     </button>
                     <button
-                      onClick={handleMovimiento}
+                      onClick={() => handleMovimiento(movDuplicado)}
                       disabled={movLoading}
                       className="px-4 py-2 text-[12.5px] font-medium bg-accent text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors"
                     >
-                      {movLoading ? "Guardando…" : "Confirmar"}
+                      {movLoading
+                        ? "Guardando…"
+                        : movDuplicado
+                          ? "Sí, registrar otro"
+                          : "Confirmar"}
                     </button>
                   </div>
                 </div>

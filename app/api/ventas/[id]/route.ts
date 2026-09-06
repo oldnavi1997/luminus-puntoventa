@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { marcaDeConversion, naceDeConversion, origenDeConversion } from "@/lib/conversion";
 import { revertirStockYCaja } from "@/lib/reversion-venta";
-import { reindexarEnEcommerce } from "@/lib/reindex-ecommerce";
+import { reindexarTrasResponder } from "@/lib/reindex-ecommerce";
 import { Prisma } from "@/app/generated/prisma/client";
 import { z } from "zod";
 import { validarDocumento, TIPOS_DOCUMENTO } from "@/lib/documento";
@@ -162,7 +162,7 @@ export async function DELETE(
   });
 
   if (!esConversion) {
-    await reindexarEnEcommerce(doc.items.map((i) => i.productId));
+    await reindexarTrasResponder(doc.items.map((i) => i.productId));
   }
 
   return NextResponse.json({ ok: true, revirtio: !esConversion });

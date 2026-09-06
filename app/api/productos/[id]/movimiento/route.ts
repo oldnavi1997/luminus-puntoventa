@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { reindexarEnEcommerce } from "@/lib/reindex-ecommerce";
+import { reindexarTrasResponder } from "@/lib/reindex-ecommerce";
 import {
   esTipoMovimiento,
   dataDe,
@@ -11,6 +11,8 @@ import {
   ORIGEN_LABEL,
   esCarreraDeStock,
   esFalloDeMovimiento,
+  movimientoGemeloReciente,
+  haceSegundos,
 } from "@/lib/stock-movimiento";
 
 export async function POST(
@@ -23,7 +25,7 @@ export async function POST(
 
   const { id } = await params;
   const body = await req.json();
-  const { tipo, cantidad, nota } = body;
+  const { tipo, cantidad, nota, forzar } = body;
 
   if (!esTipoMovimiento(tipo)) {
     return NextResponse.json({ error: "Tipo de movimiento inválido" }, { status: 400 });
@@ -46,6 +48,25 @@ export async function POST(
           status: 422,
           message: `Stock insuficiente en ${ORIGEN_LABEL[origen]} (disponible: ${product[origen]})`,
         };
+      }
+
+      // Antes de sumar nada: si ya hay uno igual recién hecho, esto huele a
+      // reintento de algo que sí se guardó (ver VENTANA_DUPLICADO_MS). Se
+      // devuelve para que el cliente pregunte, en vez de duplicar el stock.
+      if (forzar !== true) {
+        const gemelo = await movimientoGemeloReciente(
+          tx,
+          { productId: id, tipo, cantidad: cant, userId: session.user.id }
+        );
+        if (gemelo) {
+          throw {
+            status: 409,
+            duplicadoProbable: true,
+            message:
+              `Hace ${haceSegundos(gemelo.createdAt)} s ya registraste este mismo movimiento ` +
+              `(${cant} unidades de "${product.name}"). Si el anterior te dio error, igual se guardó.`,
+          };
+        }
       }
 
       let updated;
@@ -81,8 +102,10 @@ export async function POST(
       return updated;
     });
 
-    // Fuera de la transacción: dentro, el ecommerce leería el stock de antes.
-    await reindexarEnEcommerce([id]);
+    // Después de responder: el aviso al buscador tarda hasta 5 s y el stock ya
+    // está escrito. Esperarlo aquí era la ventana en la que el celular cortaba
+    // por timeout y el cajero reintentaba un movimiento ya hecho.
+    await reindexarTrasResponder([id]);
 
     return NextResponse.json({
       product: {
@@ -92,7 +115,13 @@ export async function POST(
       },
     });
   } catch (e) {
-    if (esFalloDeMovimiento(e)) return NextResponse.json({ error: e.message }, { status: e.status });
+    if (esFalloDeMovimiento(e)) {
+      return NextResponse.json(
+        { error: e.message, ...(e.duplicadoProbable && { duplicadoProbable: true }) },
+        { status: e.status }
+      );
+    }
+    console.error("[movimiento] fallo no previsto", e);
     return NextResponse.json({ error: "No se pudo registrar el movimiento" }, { status: 500 });
   }
 }

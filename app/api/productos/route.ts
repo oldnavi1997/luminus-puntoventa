@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { reindexarEnEcommerce } from "@/lib/reindex-ecommerce";
+import { reindexarTrasResponder } from "@/lib/reindex-ecommerce";
 import { compararProductos } from "@/lib/orden-productos";
 
 export async function POST(req: NextRequest) {
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     include: { categories: { select: { id: true, name: true } } },
   });
 
-  await reindexarEnEcommerce([product.id]);
+  await reindexarTrasResponder([product.id]);
 
   return NextResponse.json({
     product: {
