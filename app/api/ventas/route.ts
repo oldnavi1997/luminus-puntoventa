@@ -10,7 +10,7 @@ import { cargarRepresentacion } from "@/lib/impresion/cargar";
 import { getLensLabel } from "@/lib/lens-tree";
 import { DocumentType, DocumentStatus } from "@/app/generated/prisma/client";
 import { reservarCorrelativo } from "@/lib/document-serie";
-import { reindexarEnEcommerce } from "@/lib/reindex-ecommerce";
+import { reindexarTrasResponder } from "@/lib/reindex-ecommerce";
 
 // ─── GET: historial de ventas por fecha ──────────────────────────────────────
 
@@ -365,7 +365,7 @@ export async function POST(req: NextRequest) {
 
     // El stock ya bajó en la base. El buscador de la web no la lee, así que hay
     // que avisarle o seguirá ofreciendo unidades que ya no están.
-    await reindexarEnEcommerce(data.items.map((i) => i.productId));
+    await reindexarTrasResponder(data.items.map((i) => i.productId));
 
     // Para Nota de Venta: no enviar a SUNAT
     if (isNotaVenta) {

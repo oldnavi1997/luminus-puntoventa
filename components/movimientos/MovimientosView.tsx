@@ -77,6 +77,9 @@ export function MovimientosView() {
   const [items, setItems] = useState<LineItem[]>([]);
   const [nota, setNota] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // El backend corta un lote idéntico y reciente por si es un reintento de
+  // algo que ya se guardó. Si de verdad es otro, se repite con `forzar`.
+  const [duplicado, setDuplicado] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -171,11 +174,12 @@ export function MovimientosView() {
   const totalUnidades = items.reduce((s, i) => s + i.cantidad, 0);
   const origen = ORIGEN_DE[tipo];
 
-  async function handleConfirm() {
+  async function handleConfirm(forzar = false) {
     if (items.length === 0) return;
     setSubmitting(true);
     setError("");
     setSuccess("");
+    setDuplicado(false);
     try {
       const res = await fetch("/api/productos/movimientos", {
         method: "POST",
@@ -184,10 +188,14 @@ export function MovimientosView() {
           tipo,
           nota: nota.trim() || undefined,
           items: items.map((i) => ({ productId: i.product.id, cantidad: i.cantidad })),
+          ...(forzar && { forzar: true }),
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Error al registrar el movimiento");
+      if (!res.ok) {
+        if (json.duplicadoProbable) setDuplicado(true);
+        throw new Error(json.error ?? "Error al registrar el movimiento");
+      }
       setSuccess(`${MOVIMIENTO_LABEL[tipo]}: ${items.length} productos · ${totalUnidades} unidades.`);
       setItems([]);
       setNota("");
@@ -343,11 +351,15 @@ export function MovimientosView() {
                     <div className="text-[11.5px] font-mono text-ink-3">{totalUnidades} unidades</div>
                   </div>
                   <button
-                    onClick={handleConfirm}
+                    onClick={() => handleConfirm(duplicado)}
                     disabled={submitting}
                     className="ml-auto px-6 py-2.5 text-[13px] font-medium bg-accent text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors"
                   >
-                    {submitting ? "Aplicando…" : "Confirmar movimiento"}
+                    {submitting
+                      ? "Aplicando…"
+                      : duplicado
+                        ? "Sí, registrar otro lote"
+                        : "Confirmar movimiento"}
                   </button>
                 </div>
               )}

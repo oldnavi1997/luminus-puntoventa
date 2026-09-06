@@ -98,10 +98,54 @@ export function esCarreraDeStock(e: unknown): boolean {
 export interface FalloDeMovimiento {
   status: number;
   message: string;
+  /** Marca el 409 de reintento, que el cliente resuelve confirmando, no repitiendo. */
+  duplicadoProbable?: boolean;
 }
 
 export function esFalloDeMovimiento(e: unknown): e is FalloDeMovimiento {
   if (typeof e !== "object" || e === null) return false;
   const posible = e as { status?: unknown; message?: unknown };
   return typeof posible.status === "number" && typeof posible.message === "string";
+}
+
+/**
+ * Cuánto se mira hacia atrás para decidir que un movimiento idéntico es un
+ * reintento y no una carga nueva.
+ *
+ * El POST suma (`dataDe` incrementa), así que repetirlo suma de nuevo. Cuando el
+ * celular corta por timeout la escritura ya ocurrió, pero el cajero ve un error
+ * y vuelve a confirmar: así se duplicaba el stock. Como no hay columna donde
+ * guardar una llave de idempotencia —el esquema lo manda el ecommerce, ver
+ * railway.toml— se reconoce el reintento por su forma: mismo producto, tipo,
+ * cantidad y usuario dentro de la ventana.
+ *
+ * No se bloquea nada: el cliente puede repetir con `forzar` si de verdad es un
+ * segundo movimiento igual.
+ */
+export const VENTANA_DUPLICADO_MS = 90_000;
+
+/**
+ * El movimiento idéntico más reciente dentro de la ventana, si lo hay.
+ * Va por el índice `[productId, createdAt]` que ya existe.
+ */
+export async function movimientoGemeloReciente(
+  tx: Prisma.TransactionClient,
+  mov: { productId: string; tipo: TipoMovimiento; cantidad: number; userId: string },
+  ahora: Date = new Date()
+) {
+  return tx.stockMovimiento.findFirst({
+    where: {
+      productId: mov.productId,
+      tipo:      mov.tipo,
+      cantidad:  mov.cantidad,
+      userId:    mov.userId,
+      createdAt: { gte: new Date(ahora.getTime() - VENTANA_DUPLICADO_MS) },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+/** Segundos transcurridos, para redactar el aviso de duplicado. */
+export function haceSegundos(desde: Date, ahora: Date = new Date()): number {
+  return Math.max(0, Math.round((ahora.getTime() - desde.getTime()) / 1000));
 }
