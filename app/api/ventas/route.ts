@@ -67,7 +67,9 @@ export async function GET(req: NextRequest) {
       saldoCobradoPor: { select: { name: true } },
       order: { select: { documentNumber: true, shippingName: true } },
       items: {
-        include: { product: { select: { sku: true } } },
+        // La imagen es para el historial de la app: reconocer la montura de un
+        // vistazo es mas rapido que leer "Keegan Black/5 en 1".
+        include: { product: { select: { id: true, sku: true, images: true } } },
       },
     },
   });
@@ -106,7 +108,9 @@ export async function GET(req: NextRequest) {
       quantity: i.quantity,
       unitPrice: Number(i.unitPrice),
       lineTotal: Number(i.lineTotal),
+      productId: i.product.id,
       sku: i.product.sku ?? null,
+      image: i.product.images[0] ?? null,
     })),
   }));
 
