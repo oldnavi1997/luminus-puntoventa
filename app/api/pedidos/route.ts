@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
       take: limit,
       include: {
         _count: { select: { items: true } },
-        saleDocument: { select: { fullNumber: true, status: true } },
+        saleDocument: { select: { id: true, fullNumber: true, status: true } },
       },
     }),
     prisma.order.count({ where }),
@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
       orderStatus: o.orderStatus,
       paymentStatus: o.paymentStatus,
       stockIssue: o.stockIssue,
+      comprobanteId: o.saleDocument?.id ?? null,
       comprobante: o.saleDocument?.fullNumber ?? null,
       comprobanteStatus: o.saleDocument?.status ?? null,
       itemsCount: o._count.items,

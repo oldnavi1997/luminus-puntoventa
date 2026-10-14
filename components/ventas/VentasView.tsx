@@ -3,10 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ChevronDown, ChevronRight, Receipt as ReceiptIcon, X, Trash2, Pencil, Phone, User, Printer, Search, Undo2, IdCard , FileDown } from "lucide-react";
+import { ChevronDown, ChevronRight, Receipt as ReceiptIcon, X, Trash2, Pencil, Phone, User, Printer, Search, Undo2, IdCard , FileDown, Tag, FileSpreadsheet } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
 import { ReceiptModal } from "@/components/pos/ReceiptModal";
+import { EnvioModal } from "@/components/envio/EnvioModal";
+import { ExportarShalomModal } from "@/components/envio/ExportarShalomModal";
 import type { PrescriptionData } from "@/types";
 import { TIPOS_DOCUMENTO, tieneDocumento, validarDocumento } from "@/lib/documento";
 
@@ -36,6 +38,8 @@ interface Sale {
   channel?: string;
   /** Lo que el cliente escribio al comprar en la web; null si la venta es de mostrador. */
   webOriginal?: { docNumber: string | null; name: string } | null;
+  /** Etiqueta de envío: la guardada o, en una venta web sin etiqueta, el courier del pedido. */
+  envio?: { courier: string; guardado: boolean } | null;
   montoAdelanto?: number | null;
   notes?: string | null;
   location: string;
@@ -106,6 +110,8 @@ export function VentasView() {
   const [deleteDoc, setDeleteDoc]   = useState<Sale | null>(null);
   const [editingDoc, setEditingDoc] = useState<Sale | null>(null);
   const [printDoc,  setPrintDoc]    = useState<Sale | null>(null);
+  const [envioDoc,  setEnvioDoc]    = useState<Sale | null>(null);
+  const [exportandoShalom, setExportandoShalom] = useState(false);
   const [resolviendo, setResolviendo] = useState(0);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -289,6 +295,14 @@ export function VentasView() {
                 ? `${filteredDocs.length} de ${total} — afina la busqueda`
                 : `${filteredDocs.length} ventas`}
             </span>
+            <button
+              onClick={() => setExportandoShalom(true)}
+              className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-2 rounded-lg border bg-surface-light text-ink-3 border-border hover:text-ink transition-colors"
+              title="Descargar la plantilla de carga masiva de Shalom con los envíos del día"
+            >
+              <FileSpreadsheet size={13} />
+              Exportar a Shalom
+            </button>
           </div>
 
           {loading ? (
@@ -451,6 +465,13 @@ export function VentasView() {
                               <FileDown size={13} />
                             </a>
                             <button
+                              onClick={() => setEnvioDoc(doc)}
+                              className={`p-1 rounded-lg transition-colors ${doc.envio?.guardado ? "text-accent hover:bg-accent/10" : "text-ink-4 hover:text-ink-2 hover:bg-surface-light"}`}
+                              title={doc.envio?.guardado ? `Etiqueta de envío (${doc.envio.courier})` : "Etiqueta de envío"}
+                            >
+                              <Tag size={13} />
+                            </button>
+                            <button
                               onClick={() => setEditingDoc(doc)}
                               className={`p-1 rounded-lg transition-colors ${hasExtra ? "text-accent hover:bg-accent/10" : "text-ink-4 hover:text-ink-2 hover:bg-surface-light"}`}
                               title="Editar datos del cliente"
@@ -575,6 +596,26 @@ export function VentasView() {
 
       {printDoc && (
         <ReceiptModal documentId={printDoc.id} onClose={() => setPrintDoc(null)} />
+      )}
+
+      {envioDoc && (
+        <EnvioModal
+          documentId={envioDoc.id}
+          fullNumber={envioDoc.fullNumber}
+          onClose={() => setEnvioDoc(null)}
+          onGuardado={(e) =>
+            setDocs((prev) =>
+              prev.map((d) => (d.id === envioDoc.id ? { ...d, envio: { courier: e.courier, guardado: true } } : d))
+            )
+          }
+        />
+      )}
+
+      {exportandoShalom && (
+        <ExportarShalomModal
+          fechaInicial={buscando || allHistory ? today : date}
+          onClose={() => setExportandoShalom(false)}
+        />
       )}
     </div>
   );
