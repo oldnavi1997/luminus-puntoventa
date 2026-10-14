@@ -65,7 +65,8 @@ export async function GET(req: NextRequest) {
     include: {
       cashier: { select: { name: true } },
       saldoCobradoPor: { select: { name: true } },
-      order: { select: { documentNumber: true, shippingName: true } },
+      order: { select: { documentNumber: true, shippingName: true, shippingCourier: true } },
+      datosEnvio: { select: { courier: true } },
       items: {
         // La imagen es para el historial de la app: reconocer la montura de un
         // vistazo es mas rapido que leer "Keegan Black/5 en 1".
@@ -94,6 +95,12 @@ export async function GET(req: NextRequest) {
     webOriginal: d.order
       ? { docNumber: d.order.documentNumber, name: d.order.shippingName }
       : null,
+    // Courier de la etiqueta guardada o, en una venta web sin etiqueta, el del pedido.
+    envio: d.datosEnvio
+      ? { courier: d.datosEnvio.courier, guardado: true }
+      : d.order?.shippingCourier
+        ? { courier: d.order.shippingCourier.toUpperCase(), guardado: false }
+        : null,
     montoAdelanto: d.montoAdelanto ? Number(d.montoAdelanto) : null,
     location: d.location,
     notes: d.notes ?? null,

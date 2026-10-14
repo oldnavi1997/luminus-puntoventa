@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Globe, Truck, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Globe, Truck, AlertTriangle, ChevronLeft, ChevronRight, Tag } from "lucide-react";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
+import { EnvioModal } from "@/components/envio/EnvioModal";
 
 interface Pedido {
   id: string;
@@ -18,6 +19,7 @@ interface Pedido {
   orderStatus: string;
   paymentStatus: string;
   stockIssue: string | null;
+  comprobanteId: string | null;
   comprobante: string | null;
   comprobanteStatus: string | null;
   itemsCount: number;
@@ -77,6 +79,7 @@ export function PedidosView() {
   const [page, setPage]       = useState(1);
   const [pages, setPages]     = useState(1);
   const [total, setTotal]     = useState(0);
+  const [envioDe, setEnvioDe] = useState<Pedido | null>(null);
 
   const fetchPedidos = useCallback(() => {
     setLoading(true);
@@ -191,8 +194,16 @@ export function PedidosView() {
                       {p.comprobante ? (
                         <>
                           <div className="font-mono text-[12.5px] text-ink">{p.comprobante}</div>
-                          {p.comprobanteStatus === "VOIDED" && (
+                          {p.comprobanteStatus === "VOIDED" ? (
                             <div className="text-[11px] text-danger mt-0.5">anulado</div>
+                          ) : p.comprobanteId && (
+                            // La etiqueta cuelga del comprobante: es la misma fila que ve el historial.
+                            <button
+                              onClick={() => setEnvioDe(p)}
+                              className="flex items-center gap-1 mt-1 text-[11px] text-ink-3 hover:text-accent transition-colors"
+                            >
+                              <Tag size={11} /> Etiqueta de envío
+                            </button>
                           )}
                         </>
                       ) : (
@@ -246,6 +257,14 @@ export function PedidosView() {
           stock a almacén y tienda y se anula el comprobante.
         </p>
       </div>
+
+      {envioDe?.comprobanteId && (
+        <EnvioModal
+          documentId={envioDe.comprobanteId}
+          fullNumber={envioDe.comprobante ?? undefined}
+          onClose={() => setEnvioDe(null)}
+        />
+      )}
     </div>
   );
 }

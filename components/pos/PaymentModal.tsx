@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Banknote, CreditCard, Smartphone, CheckCircle, AlertCircle, Clock, Printer, Send, FileText, Layers } from "lucide-react";
+import { X, Banknote, CreditCard, Smartphone, CheckCircle, AlertCircle, Clock, Printer, Send, FileText, Layers, Tag } from "lucide-react";
 import { useCartStore } from "@/stores/cartStore";
 import { formatPEN } from "@/lib/utils";
 import type { PosCustomer, StockSource } from "@/types";
 import { ReceiptModal } from "./ReceiptModal";
+import { EnvioModal } from "@/components/envio/EnvioModal";
 import type { RepresentacionImpresa } from "@/lib/impresion/tipos";
 
 interface PaymentModalProps {
@@ -48,6 +49,7 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
   const [saleResult, setSaleResult] = useState<SaleResult | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [showReceipt, setShowReceipt] = useState(false);
+  const [showEnvio, setShowEnvio] = useState(false);
   const [saleItems, setSaleItems] = useState<ReturnType<typeof useCartStore.getState>["items"]>([]);
   const [saleCustomer, setSaleCustomer] = useState<PosCustomer | null>(null);
   const [esAdelanto, setEsAdelanto] = useState(false);
@@ -518,9 +520,12 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button onClick={() => setShowReceipt(true)} className="flex items-center justify-center gap-1.5 bg-surface-light hover:bg-border rounded-xl py-2.5 text-[13px] text-ink transition-colors border border-border">
                   <Printer size={14} /> Ticket
+                </button>
+                <button onClick={() => setShowEnvio(true)} className="flex items-center justify-center gap-1.5 bg-surface-light hover:bg-border rounded-xl py-2.5 text-[13px] text-ink transition-colors border border-border">
+                  <Tag size={14} /> Envío
                 </button>
                 <a
                   href={`/api/ventas/${saleResult.id}/pdf`}
@@ -567,6 +572,14 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
           documentId={saleResult.id}
           rep={saleResult.impresion ?? null}
           onClose={() => setShowReceipt(false)}
+        />
+      )}
+
+      {showEnvio && saleResult && (
+        <EnvioModal
+          documentId={saleResult.id}
+          fullNumber={saleResult.fullNumber}
+          onClose={() => setShowEnvio(false)}
         />
       )}
     </div>

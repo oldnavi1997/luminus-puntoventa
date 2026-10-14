@@ -347,6 +347,47 @@ says only verifiable things and points at SUNAT’s own CPE validator, not at a 
 `SUNAT_RESOLUCION` is empty by default: an invented resolution number on a tax document is
 worse than none.
 
+### Etiquetas de envío y carga masiva de Shalom
+
+Portado de `adamantio-puntoventa`. Una venta puede llevar la etiqueta del paquete en
+`sale_document_envios` (`SaleDocumentEnvio`, una fila por comprobante). **Va aparte de
+`SaleDocument` a propósito:** `lib/impresion/` no la lee, así que el celular y la agencia nunca
+salen en el ticket ni en el PDF. `lib/envio.ts` es la única fuente de las reglas de forma y del
+texto de la etiqueta.
+
+- **Se crea después de cobrar**, no en el carrito: botón «Envío» al terminar la venta, el icono
+  de etiqueta del historial (`/ventas`) y «Etiqueta de envío» en Ventas web (`/pedidos`). Todos
+  abren `EnvioModal` → `GET/PUT /api/ventas/[id]/envio`. Guardar e imprimir es un paso: lo que
+  sale en papel es lo que queda guardado. No toca la venta, así que vale para un comprobante ya
+  aceptado por SUNAT; `POST /api/ventas` no sabe nada de envíos.
+- **Una venta web no trae fila**: el GET la propone desde su `Order` (`propuestaDeEnvio`) hasta
+  que alguien la guarda. Olva va como dirección; la «agencia» Shalom del checkout es texto libre
+  y casi nunca está en la lista, así que hay que elegirla.
+- **Courier + modalidad.** Shalom / Olva / Otro. `modalidad` dice qué es `destino`: `AGENCIA` o
+  `DIRECCION`. Shalom solo admite agencia. Olva solo lleva etiqueta, sin Excel.
+- **Se imprime en el rollo del ticket, 72 mm útiles**, con los mismos `!important` que
+  `Receipt` por el `overflow:hidden` de `globals.css`. Nada de precios, productos ni receta.
+
+«Exportar a Shalom» en el historial (`ExportarShalomModal` → `GET /api/envios/shalom?fecha=`)
+descarga **la plantilla oficial de Shalom** (`lib/shalom/plantilla.xlsx`) llena con los envíos
+del día: las ventas con etiqueta Shalom y los pedidos web por Shalom aún sin etiqueta. Las
+anuladas no entran. Sin `descargar=1` devuelve la vista previa.
+
+- **Se rellena su plantilla, no se arma un Excel nuevo.** Trae las agencias en una hoja
+  `veryHidden`, validaciones y fórmulas de medidas; `lib/shalom/plantilla.ts` reescribe solo las
+  filas de `xl/worksheets/sheet1.xml` con JSZip y escribe el valor junto a cada fórmula.
+- **DESTINO tiene que ser idéntico a la lista de Shalom**, dobles espacios incluidos
+  (`AV  INDEPENDENCIA`). El formulario solo deja elegirla de `lib/shalom/agencias.ts` y
+  `envioSchema` rechaza cualquier otra. Shalom nombra las agencias por calle o zona, no por ciudad.
+- Las filas sin DNI, sin celular o con agencia fuera de la lista **no se exportan**: la vista
+  previa las marca y se corrigen ahí. El celular sale con 9 dígitos (sin el `+51` de la web).
+- ORIGEN es fijo (`ORIGEN_SHALOM`, la misma agencia que adamantio) y MERCADERIA se elige por
+  venta (nulo = `PAQUETE XXS`).
+- Si Shalom cambia la plantilla o sus agencias, se reemplaza `plantilla.xlsx` y se regenera
+  `agencias.ts` desde la columna C de `Hoja2`. Es la misma copia que usa adamantio.
+
+La tabla es de la migración `20261014200448_sale_document_envios` del ecommerce.
+
 ### El buscador del ecommerce no lee la base
 
 Borrar o editar un producto desde el POS **sí** lo cambia en la web: comparten la
