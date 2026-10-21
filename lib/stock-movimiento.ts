@@ -1,6 +1,9 @@
 import type { Prisma, TipoMovimientoStock } from "@/app/generated/prisma/client";
 
-/** Tipos que un usuario crea desde el POS. Los *_WEB los origina el ecommerce. */
+/**
+ * Tipos que un usuario crea desde el POS. Los *_WEB los origina el ecommerce y
+ * los *_ACCESORIO_POS la venta (`lib/accesorios-venta.ts`).
+ */
 export const TIPOS_MOVIMIENTO = ["INGRESO", "TRASLADO", "RETORNO"] as const;
 export type TipoMovimiento = (typeof TIPOS_MOVIMIENTO)[number];
 
@@ -13,6 +16,8 @@ export const TIPOS_MOVIMIENTO_FILTRO = [
   ...TIPOS_MOVIMIENTO,
   "VENTA_WEB",
   "ANULACION_WEB",
+  "ACCESORIO_POS",
+  "ANULACION_ACCESORIO_POS",
 ] as const satisfies readonly TipoMovimientoStock[];
 
 export function esTipoMovimientoFiltro(v: unknown): v is TipoMovimientoStock {
@@ -26,6 +31,8 @@ export const MOVIMIENTO_LABEL: Record<TipoMovimientoStock, string> = {
   RETORNO:       "Retorno a almacén",
   VENTA_WEB:     "Venta web",
   ANULACION_WEB: "Anulación de venta web",
+  ACCESORIO_POS:           "Accesorio de venta",
+  ANULACION_ACCESORIO_POS: "Accesorio devuelto",
 };
 
 /** Columna de la que sale el stock. El INGRESO es mercadería nueva: no descuenta de ninguna. */

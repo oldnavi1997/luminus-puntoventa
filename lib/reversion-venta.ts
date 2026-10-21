@@ -14,9 +14,12 @@
 
 import type { Prisma } from "@/app/generated/prisma/client";
 import { naceDeConversion, origenDeConversion } from "@/lib/conversion";
+import { devolverAccesorios } from "@/lib/accesorios-venta";
 
 export interface VentaAReverir {
   id: string;
+  fullNumber: string;
+  cashierId: string;
   channel: string;
   location: string;
   posSessionId: string | null;
@@ -32,6 +35,8 @@ export interface VentaAReverir {
 export interface ResultadoReversion {
   stock: boolean;
   caja: boolean;
+  /** Estuches/líquidos devueltos: también hay que avisar al buscador web. */
+  accesorios: string[];
   /** Por qué se dejó algo sin revertir, para poder decirlo en vez de callarlo. */
   motivos: string[];
 }
@@ -42,12 +47,17 @@ export interface ResultadoReversion {
  * Se llama dentro de una transacción de quien la usa: al anular tiene que ir en
  * el mismo `$transaction` que marca el documento como anulado, o un fallo a
  * medias dejaría el stock devuelto y el comprobante todavía vigente.
+ *
+ * `userId` firma el reingreso de los accesorios; sin él (la anulación la cierra
+ * el poller de tickets, sin nadie detrás) queda a nombre de quien cobró.
  */
 export async function revertirStockYCaja(
   tx: Prisma.TransactionClient,
   doc: VentaAReverir,
+  userId: string = doc.cashierId,
 ): Promise<ResultadoReversion> {
   const motivos: string[] = [];
+  let accesorios: string[] = [];
 
   // Una venta web salió de almacén y/o tienda según el desglose que guarda la
   // orden; aquí no se conoce y devolverlo todo a tienda descuadraría las dos
@@ -73,10 +83,12 @@ export async function revertirStockYCaja(
         });
       }
     }
+
+    accesorios = await devolverAccesorios(tx, doc, userId);
   }
 
   if (!doc.posSessionId) {
-    return { stock: !esWeb, caja: false, motivos };
+    return { stock: !esWeb, caja: false, accesorios, motivos };
   }
 
   // En una venta con adelanto (PARTIAL) sólo se registró el adelanto en la
@@ -101,7 +113,7 @@ export async function revertirStockYCaja(
 
   await tx.posSession.update({ where: { id: doc.posSessionId }, data: decremento });
 
-  return { stock: !esWeb, caja: true, motivos };
+  return { stock: !esWeb, caja: true, accesorios, motivos };
 }
 
 /** Lo que hace falta para saber dónde vive el movimiento de una venta. */

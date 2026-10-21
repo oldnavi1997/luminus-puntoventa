@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { reindexarTrasResponder } from "@/lib/reindex-ecommerce";
+import { ACCESORIO_LABEL } from "@/lib/accesorios-venta";
+import type { AccesorioVenta } from "@/app/generated/prisma/client";
 
 /** Código de error de Prisma, para separar el "no existe" del fallo de verdad. */
 function codigoPrisma(e: unknown): string | undefined {
@@ -21,9 +23,31 @@ export async function PATCH(
   const { id } = await params;
   const body = await req.json();
 
-  const { name, sku, brand, price, storePrice, stock, stockTienda, stockAlmacen, trackInventory, active } = body;
+  const {
+    name, sku, brand, price, storePrice, stock, stockTienda, stockAlmacen, trackInventory, active,
+    incluyeEstuche, incluyeLiquido, accesorioVenta,
+  } = body;
+
+  if (accesorioVenta !== undefined && accesorioVenta !== null && !(accesorioVenta in ACCESORIO_LABEL)) {
+    return NextResponse.json({ error: "Accesorio no válido" }, { status: 400 });
+  }
 
   try {
+    // Un solo estuche y un solo líquido: la base lo garantiza con un índice
+    // único, pero así el mensaje dice cuál producto ya lo es.
+    if (accesorioVenta) {
+      const otro = await prisma.product.findFirst({
+        where: { accesorioVenta: accesorioVenta as AccesorioVenta, NOT: { id } },
+        select: { name: true },
+      });
+      if (otro) {
+        return NextResponse.json(
+          { error: `«${otro.name}» ya está marcado como ${ACCESORIO_LABEL[accesorioVenta as AccesorioVenta].toLowerCase()}. Desmárcalo primero.` },
+          { status: 409 },
+        );
+      }
+    }
+
     const skuTrim = sku?.trim();
     if (skuTrim) {
       const dup = await prisma.product.findFirst({ where: { sku: skuTrim, NOT: { id } } });
@@ -43,6 +67,9 @@ export async function PATCH(
         ...(stockAlmacen !== undefined && { stockAlmacen: Number(stockAlmacen) }),
         ...(trackInventory !== undefined && { trackInventory: Boolean(trackInventory) }),
         ...(active       !== undefined && { active: Boolean(active) }),
+        ...(incluyeEstuche !== undefined && { incluyeEstuche: Boolean(incluyeEstuche) }),
+        ...(incluyeLiquido !== undefined && { incluyeLiquido: Boolean(incluyeLiquido) }),
+        ...(accesorioVenta !== undefined && { accesorioVenta: (accesorioVenta || null) as AccesorioVenta | null }),
       },
     });
 
@@ -62,7 +89,7 @@ export async function PATCH(
     // solo podía mostrar "No se pudo guardar", sin decir por qué.
     const code = codigoPrisma(e);
     if (code === "P2025") return NextResponse.json({ error: "El producto ya no existe" }, { status: 404 });
-    if (code === "P2002") return NextResponse.json({ error: "Ya existe un producto con ese SKU" }, { status: 409 });
+    if (code === "P2002") return NextResponse.json({ error: "Ya existe un producto con ese SKU o ese accesorio" }, { status: 409 });
     console.error("[productos PATCH] fallo no previsto", e);
     return NextResponse.json({ error: "No se pudo guardar el producto" }, { status: 500 });
   }

@@ -11,6 +11,7 @@ import { getLensLabel } from "@/lib/lens-tree";
 import { DocumentType, DocumentStatus } from "@/app/generated/prisma/client";
 import { reservarCorrelativo } from "@/lib/document-serie";
 import { reindexarTrasResponder } from "@/lib/reindex-ecommerce";
+import { descontarAccesorios } from "@/lib/accesorios-venta";
 
 // ─── GET: historial de ventas por fecha ──────────────────────────────────────
 
@@ -369,14 +370,31 @@ export async function POST(req: NextRequest) {
         data: sessionUpdate,
       });
 
-      return { document, buyer };
+      // 6. Estuche y líquido que se lleva el cliente. Fuera del comprobante,
+      // dentro del stock: ver `lib/accesorios-venta.ts`.
+      const accesorios = await descontarAccesorios(tx, {
+        saleDocumentId: document.id,
+        fullNumber: document.fullNumber,
+        ubicacion: stockSource,
+        userId: session.user.id,
+        items: data.items.map((item) => ({
+          quantity: item.quantity,
+          product: products.find((p) => p.id === item.productId)!,
+        })),
+      });
+
+      return { document, buyer, accesorios };
     });
 
     const doc = result.document;
+    const avisosAccesorios = result.accesorios.avisos;
 
     // El stock ya bajó en la base. El buscador de la web no la lee, así que hay
     // que avisarle o seguirá ofreciendo unidades que ya no están.
-    await reindexarTrasResponder(data.items.map((i) => i.productId));
+    await reindexarTrasResponder([
+      ...data.items.map((i) => i.productId),
+      ...result.accesorios.productIds,
+    ]);
 
     // Para Nota de Venta: no enviar a SUNAT
     if (isNotaVenta) {
@@ -387,6 +405,7 @@ export async function POST(req: NextRequest) {
         cambio: Number(doc.cambio ?? 0),
         montoAdelanto: doc.montoAdelanto ? Number(doc.montoAdelanto) : null,
         status: esAdelanto ? "PARTIAL" : "ACCEPTED",
+        avisosAccesorios,
         // Lo que hace falta para imprimir, ya armado: así el ticket sale sin
         // esperar otra petición, que es cuando el cajero tiene a alguien delante.
         impresion: await representacionONada(doc.id),
@@ -410,6 +429,7 @@ export async function POST(req: NextRequest) {
       total: Number(doc.total),
       cambio: Number(doc.cambio ?? 0),
       status: emision.estadoDocumento,
+      avisosAccesorios,
       impresion: await representacionONada(doc.id),
       sunat: {
         aceptado: emision.aceptado,

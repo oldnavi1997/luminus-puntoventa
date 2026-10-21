@@ -8,13 +8,22 @@ import { marcaDeConversion } from "@/lib/conversion";
 
 type Llamada = { modelo: string; args: Record<string, unknown> };
 
+type MovFalso = { productId: string; tipo: string; cantidad: number };
+
 /** Un `tx` que no toca nada y apunta lo que le piden. */
-function txFalso(origen: { id: string } | null = null) {
+function txFalso(origen: { id: string } | null = null, movimientos: MovFalso[] = []) {
   const llamadas: Llamada[] = [];
   const tx = {
     product: {
       update: async (args: Record<string, unknown>) => {
         llamadas.push({ modelo: "product", args });
+        return { stockTienda: 0, stockAlmacen: 0 };
+      },
+    },
+    stockMovimiento: {
+      findMany: async () => movimientos,
+      create: async (args: Record<string, unknown>) => {
+        llamadas.push({ modelo: "stockMovimiento", args });
         return {};
       },
     },
@@ -37,6 +46,8 @@ function txFalso(origen: { id: string } | null = null) {
 function venta(overrides: Partial<VentaAReverir> = {}): VentaAReverir {
   return {
     id: "doc-1",
+    fullNumber: "NV001-00000300",
+    cashierId: "cajero-1",
     channel: "POS",
     location: "TIENDA",
     posSessionId: "sesion-1",
@@ -91,6 +102,48 @@ describe("devolución del stock", () => {
     expect(llamadas.filter((l) => l.modelo === "product")).toHaveLength(0);
     expect(r.stock).toBe(false);
     expect(r.motivos.join(" ")).toMatch(/ecommerce/);
+  });
+});
+
+describe("devolución de los accesorios", () => {
+  const estuche: MovFalso = { productId: "estuche", tipo: "ACCESORIO_POS", cantidad: 2 };
+
+  it("devuelve lo que salió con la venta, a la misma ubicación", async () => {
+    const { tx, llamadas } = txFalso(null, [estuche]);
+    const r = await revertirStockYCaja(tx, venta({ location: "ALMACEN" }), "admin-1");
+
+    const p = llamadas.filter((l) => l.modelo === "product").find((l) => l.args.where && (l.args.where as { id: string }).id === "estuche")!;
+    expect(datos(p).stockAlmacen).toEqual({ increment: 2 });
+    const mov = llamadas.find((l) => l.modelo === "stockMovimiento")!.args.data as Record<string, unknown>;
+    expect(mov.tipo).toBe("ANULACION_ACCESORIO_POS");
+    expect(mov.userId).toBe("admin-1");
+    expect(r.accesorios).toEqual(["estuche"]);
+  });
+
+  it("sin usuario, el reingreso queda a nombre de quien cobró", async () => {
+    const { tx, llamadas } = txFalso(null, [estuche]);
+    await revertirStockYCaja(tx, venta());
+
+    const mov = llamadas.find((l) => l.modelo === "stockMovimiento")!.args.data as Record<string, unknown>;
+    expect(mov.userId).toBe("cajero-1");
+  });
+
+  it("no devuelve dos veces", async () => {
+    const { tx, llamadas } = txFalso(null, [
+      estuche,
+      { productId: "estuche", tipo: "ANULACION_ACCESORIO_POS", cantidad: 2 },
+    ]);
+    const r = await revertirStockYCaja(tx, venta());
+
+    expect(llamadas.filter((l) => l.modelo === "stockMovimiento")).toHaveLength(0);
+    expect(r.accesorios).toEqual([]);
+  });
+
+  it("una venta web no devuelve accesorios", async () => {
+    const { tx, llamadas } = txFalso(null, [estuche]);
+    await revertirStockYCaja(tx, venta({ channel: "WEB" }));
+
+    expect(llamadas.filter((l) => l.modelo === "stockMovimiento")).toHaveLength(0);
   });
 });
 
