@@ -54,6 +54,8 @@ const TIPO_BADGE: Record<TipoMovimientoStock, string> = {
   RETORNO:       "bg-warning/15 text-warning",
   VENTA_WEB:     "bg-danger/15 text-danger",
   ANULACION_WEB: "bg-ink-4/15 text-ink-3",
+  ACCESORIO_POS:           "bg-danger/15 text-danger",
+  ANULACION_ACCESORIO_POS: "bg-ink-4/15 text-ink-3",
 };
 
 function fechaLima(iso: string) {

@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   if (session.user.role !== "ADMIN") return NextResponse.json({ error: "Prohibido" }, { status: 403 });
 
   const body = await req.json();
-  const { name, sku, brand, price, storePrice, stockTienda, stockAlmacen, trackInventory, categoryId } = body;
+  const { name, sku, brand, price, storePrice, stockTienda, stockAlmacen, trackInventory, categoryId, incluyeEstuche, incluyeLiquido } = body;
 
   if (!name?.trim()) return NextResponse.json({ error: "Nombre requerido" }, { status: 400 });
 
@@ -41,6 +41,10 @@ export async function POST(req: NextRequest) {
       stockAlmacen:   almacen,
       stock:          track ? tienda + almacen : 0,
       trackInventory: track,
+      // Mismo criterio que el backfill: lo que lleva inventario es montura y
+      // sale con estuche; una luna o un servicio, no.
+      incluyeEstuche: incluyeEstuche !== undefined ? Boolean(incluyeEstuche) : track,
+      incluyeLiquido: Boolean(incluyeLiquido),
       active:         true,
       ...(categoryId && {
         categories:       { connect: { id: categoryId } },

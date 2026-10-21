@@ -388,6 +388,32 @@ anuladas no entran. Sin `descargar=1` devuelve la vista previa.
 
 La tabla es de la migración `20261014200448_sale_document_envios` del ecommerce.
 
+### Estuche y líquido que acompañan a la venta
+
+Una montura sale con su estuche y ciertas lunas con su líquido limpiador. No se cobran ni
+salen en el comprobante (a S/0 serían una transferencia gratuita ante SUNAT), pero sí
+salen de la vitrina, así que `POST /api/ventas` los descuenta en la misma transacción
+(`lib/accesorios-venta.ts`).
+
+- **Marcas por producto**, en «Editar producto → Al venderlo en el POS»:
+  `incluyeEstuche` (por defecto `true`; la migración lo apagó en todo lo que va sin
+  control de inventario, o sea lunas y servicios) e `incluyeLiquido` (por defecto
+  `false`, se activa luna por luna). Una unidad de accesorio por unidad vendida, así que
+  montura + lunas = un estuche.
+- **Qué producto es el estuche y cuál el líquido** lo dice `Product.accesorioVenta`,
+  único en la base. Sin producto marcado, o con el accesorio sin control de inventario,
+  no se descuenta nada. Un accesorio vendido suelto no arrastra otro.
+- **El faltante no bloquea la venta**: se descuenta igual (queda negativo) y el POS lo
+  avisa en la pantalla de venta terminada (`avisosAccesorios`).
+- **Cada descuento es un `StockMovimiento` `ACCESORIO_POS` con `saleDocumentId`.**
+  `revertirStockYCaja` —borrar y anular— devuelve *esos* movimientos con un
+  `ANULACION_ACCESORIO_POS`, no lo que digan hoy las marcas, que pueden haber cambiado.
+  Si ya hay reingresos no devuelve de nuevo. En una conversión el movimiento vive en la
+  nota, igual que el stock de la montura, así que `documentoConElMovimiento` lo cubre.
+- Las ventas web no descuentan accesorios.
+
+La migración es `20261020150000_accesorios_incluidos_pos` del ecommerce.
+
 ### El buscador del ecommerce no lee la base
 
 Borrar o editar un producto desde el POS **sí** lo cambia en la web: comparten la

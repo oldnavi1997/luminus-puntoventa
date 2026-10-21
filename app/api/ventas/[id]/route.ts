@@ -151,18 +151,21 @@ export async function DELETE(
   // de la sesión un dinero que nunca se le sumó.
   const esConversion = naceDeConversion(doc.notes);
 
+  let accesorios: string[] = [];
   await prisma.$transaction(async (tx) => {
     // Al borrar, una conversión no revierte nada y punto: la nota de venta
     // original sigue existiendo y conserva su movimiento. (Al ANULAR es
     // distinto: allí se revierte contra la nota, porque se deshace la venta
     // entera. Ver `documentoConElMovimiento`.)
-    if (!esConversion) await revertirStockYCaja(tx, doc);
+    if (!esConversion) {
+      ({ accesorios } = await revertirStockYCaja(tx, doc, session.user.id));
+    }
 
     await tx.saleDocument.delete({ where: { id } });
   });
 
   if (!esConversion) {
-    await reindexarTrasResponder(doc.items.map((i) => i.productId));
+    await reindexarTrasResponder([...doc.items.map((i) => i.productId), ...accesorios]);
   }
 
   return NextResponse.json({ ok: true, revirtio: !esConversion });

@@ -379,7 +379,7 @@ async function deshacerVenta(
 
     if (venta) {
       const reversion = await revertirStockYCaja(tx, venta);
-      if (reversion.stock) devueltos.push(...venta.items.map((i) => i.productId));
+      if (reversion.stock) devueltos.push(...venta.items.map((i) => i.productId), ...reversion.accesorios);
 
       if (conMovimiento.esOrigen) {
         await tx.saleDocument.update({

@@ -32,6 +32,8 @@ interface SaleResult {
   status: string;
   /** Ya armada por el servidor; el ticket la pinta sin volver a pedir nada. */
   impresion?: RepresentacionImpresa | null;
+  /** Estuche/líquido que se descontó sin stock. La venta pasó igual. */
+  avisosAccesorios?: string[];
 }
 
 const PAYMENT_METHODS = [
@@ -519,6 +521,16 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
                   <span className="text-ink">{saleCustomer?.name ?? "Consumidor final"}</span>
                 </div>
               </div>
+
+              {saleResult.avisosAccesorios && saleResult.avisosAccesorios.length > 0 && (
+                <div className="bg-warning-soft border border-warning/20 rounded-xl px-4 py-3 text-left space-y-1">
+                  {saleResult.avisosAccesorios.map((aviso) => (
+                    <p key={aviso} className="flex items-start gap-1.5 text-[12px] text-warning">
+                      <AlertCircle size={13} className="mt-0.5 shrink-0" /> {aviso}
+                    </p>
+                  ))}
+                </div>
+              )}
 
               <div className="grid grid-cols-3 gap-2">
                 <button onClick={() => setShowReceipt(true)} className="flex items-center justify-center gap-1.5 bg-surface-light hover:bg-border rounded-xl py-2.5 text-[13px] text-ink transition-colors border border-border">

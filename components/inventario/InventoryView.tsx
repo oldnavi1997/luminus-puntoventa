@@ -22,6 +22,9 @@ interface Product {
   categories: { id: string; name: string }[];
   active: boolean;
   trackInventory: boolean;
+  incluyeEstuche: boolean;
+  incluyeLiquido: boolean;
+  accesorioVenta: "ESTUCHE" | "LIQUIDO" | null;
 }
 
 interface Stats {
@@ -60,6 +63,24 @@ interface EditModalProps {
   onDeleted: (id: string) => void;
 }
 
+/** La casilla de «Producto activo», reutilizable. */
+function Casilla({ marcada, onClick, texto }: { marcada: boolean; onClick: () => void; texto: string }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <button
+        type="button"
+        onClick={onClick}
+        className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
+          marcada ? "bg-accent border-accent" : "border-border"
+        }`}
+      >
+        {marcada && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
+      </button>
+      <span className="text-[13px] text-ink">{texto}</span>
+    </div>
+  );
+}
+
 function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
   const [form, setForm] = useState({
     name:           product.name,
@@ -70,6 +91,9 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
     stockAlmacen:   String(product.stockAlmacen),
     trackInventory: product.trackInventory,
     active:         product.active,
+    incluyeEstuche: product.incluyeEstuche,
+    incluyeLiquido: product.incluyeLiquido,
+    accesorioVenta: product.accesorioVenta ?? "",
   });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -139,14 +163,18 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
           stock:          form.trackInventory ? stockTienda + stockAlmacen : product.stock,
           trackInventory: form.trackInventory,
           active:         form.active,
+          incluyeEstuche: form.incluyeEstuche,
+          incluyeLiquido: form.incluyeLiquido,
+          accesorioVenta: form.accesorioVenta || null,
         }),
       });
-      if (!res.ok) throw new Error("Error al guardar");
       const json = await res.json();
+      // El 409 del accesorio dice qué producto ya lo es: vale la pena mostrarlo.
+      if (!res.ok) throw new Error(res.status === 409 ? json.error : "");
       onSaved(json.product);
       onClose();
-    } catch {
-      setError("No se pudo guardar. Intentá de nuevo.");
+    } catch (e) {
+      setError((e instanceof Error && e.message) || "No se pudo guardar. Intentá de nuevo.");
     } finally {
       setSaving(false);
     }
@@ -168,9 +196,9 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface border border-border rounded-2xl shadow-xl w-full max-w-md animate-scale-in">
+      <div className="bg-surface border border-border rounded-2xl shadow-xl w-full max-w-md animate-scale-in max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <h2 className="text-[15px] font-semibold text-ink">Editar producto</h2>
           <button onClick={onClose} className="text-ink-3 hover:text-ink transition-colors">
             <X size={18} />
@@ -178,7 +206,7 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
         </div>
 
         {/* Body */}
-        <div className="px-5 py-4 space-y-3.5">
+        <div className="px-5 py-4 space-y-3.5 overflow-y-auto">
           {/* Nombre */}
           <div>
             <label className="block text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">Nombre</label>
@@ -240,13 +268,14 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
               <p className="text-[11.5px] text-ink-3 mt-0.5">Para servicios y consumibles</p>
             </div>
             <button
+              type="button"
               onClick={() => set("trackInventory", !form.trackInventory)}
-              className={`relative w-10 h-5.5 rounded-full transition-colors ${
+              className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
                 !form.trackInventory ? "bg-accent" : "bg-border"
               }`}
             >
-              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                !form.trackInventory ? "translate-x-5" : "translate-x-0.5"
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                !form.trackInventory ? "translate-x-5" : ""
               }`} />
             </button>
           </div>
@@ -372,11 +401,46 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
             <span className="text-[13px] text-ink">Producto activo</span>
           </div>
 
+          {/* Accesorios que salen con la venta (lib/accesorios-venta.ts) */}
+          <div className="border border-border rounded-lg p-3 space-y-2.5">
+            <p className="text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium">Al venderlo en el POS</p>
+            {form.accesorioVenta ? (
+              <p className="text-[11.5px] text-ink-3">
+                Es el accesorio que descuentan las ventas; no arrastra otros.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <Casilla
+                  marcada={form.incluyeEstuche}
+                  onClick={() => set("incluyeEstuche", !form.incluyeEstuche)}
+                  texto="Descuenta un estuche"
+                />
+                <Casilla
+                  marcada={form.incluyeLiquido}
+                  onClick={() => set("incluyeLiquido", !form.incluyeLiquido)}
+                  texto="Descuenta un líquido limpiador"
+                />
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[12.5px] text-ink-2">Este producto es</span>
+              <select
+                className="bg-surface-light border border-border rounded-lg px-2.5 py-1.5 text-[12.5px] text-ink focus:outline-none focus:border-accent"
+                value={form.accesorioVenta}
+                onChange={(e) => set("accesorioVenta", e.target.value)}
+              >
+                <option value="">Un producto normal</option>
+                <option value="ESTUCHE">El estuche</option>
+                <option value="LIQUIDO">El líquido limpiador</option>
+              </select>
+            </div>
+          </div>
+
           {error && <p className="text-[12px] text-danger">{error}</p>}
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-border">
+        <div className="px-5 py-4 border-t border-border shrink-0">
           {confirmDelete ? (
             <div className="space-y-2">
               <p className="text-[13px] text-ink text-center">
@@ -614,10 +678,11 @@ function NewProductModal({ onClose, onCreated }: NewModalProps) {
               <p className="text-[11.5px] text-ink-3 mt-0.5">Para servicios y consumibles</p>
             </div>
             <button
+              type="button"
               onClick={() => set("trackInventory", !form.trackInventory)}
-              className={`relative w-10 h-5.5 rounded-full transition-colors ${!form.trackInventory ? "bg-accent" : "bg-border"}`}
+              className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${!form.trackInventory ? "bg-accent" : "bg-border"}`}
             >
-              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${!form.trackInventory ? "translate-x-5" : "translate-x-0.5"}`} />
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${!form.trackInventory ? "translate-x-5" : ""}`} />
             </button>
           </div>
 
