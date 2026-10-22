@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { parsearStockMinimo } from "@/lib/stock-minimo";
 import { reindexarTrasResponder } from "@/lib/reindex-ecommerce";
 import { ACCESORIO_LABEL } from "@/lib/accesorios-venta";
 import type { AccesorioVenta } from "@/app/generated/prisma/client";
@@ -27,6 +28,12 @@ export async function PATCH(
     name, sku, brand, price, storePrice, stock, stockTienda, stockAlmacen, trackInventory, active,
     incluyeEstuche, incluyeLiquido, accesorioVenta,
   } = body;
+
+  // null o "" devuelven el producto al umbral general.
+  const stockMinimo = body.stockMinimo === undefined ? undefined : parsearStockMinimo(body.stockMinimo);
+  if (body.stockMinimo !== undefined && stockMinimo === undefined) {
+    return NextResponse.json({ error: "El stock mínimo tiene que ser un número entero desde 0" }, { status: 400 });
+  }
 
   if (accesorioVenta !== undefined && accesorioVenta !== null && !(accesorioVenta in ACCESORIO_LABEL)) {
     return NextResponse.json({ error: "Accesorio no válido" }, { status: 400 });
@@ -70,6 +77,7 @@ export async function PATCH(
         ...(incluyeEstuche !== undefined && { incluyeEstuche: Boolean(incluyeEstuche) }),
         ...(incluyeLiquido !== undefined && { incluyeLiquido: Boolean(incluyeLiquido) }),
         ...(accesorioVenta !== undefined && { accesorioVenta: (accesorioVenta || null) as AccesorioVenta | null }),
+        ...(stockMinimo    !== undefined && { stockMinimo }),
       },
     });
 

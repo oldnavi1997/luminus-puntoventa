@@ -3,7 +3,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { reindexarTrasResponder } from "@/lib/reindex-ecommerce";
-import { compararProductos } from "@/lib/orden-productos";
+import { compararProductos, comparadorDe, esCampoOrden } from "@/lib/orden-productos";
+import { esStockBajo } from "@/lib/stock-minimo";
+import { leerStockMinimoGeneral } from "@/lib/stock-minimo-config";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -100,21 +102,43 @@ export async function GET(req: NextRequest) {
     ...(categoryId && {
       categories: { some: { id: categoryId } },
     }),
-    ...(stockFilter === "low" && { stock: { gt: 0, lte: 5 } }),
+    // "low" no cabe en el `where`: el umbral es el del producto o el general.
+    // Se filtra sobre las claves, más abajo.
     ...(stockFilter === "out" && { stock: { equals: 0 } }),
   };
 
-  // El orden es por SKU descendente (ver lib/orden-productos.ts): lo último que
-  // entró arriba. No se puede pedir en el `orderBy` — los SKU son numéricos sin
-  // relleno de ceros, así que el orden de texto los mezcla — de modo que se
-  // traen las claves de orden de todo lo que matchea, se ordena y se corta la
-  // página acá. Ese primer findMany reemplaza al count: siguen siendo dos
-  // consultas, y son tres columnas sin joins sobre un catálogo de cientos.
-  const claves = await prisma.product.findMany({
-    where,
-    select: { id: true, sku: true, name: true },
-  });
-  claves.sort(compararProductos);
+  // El orden por defecto es por SKU descendente (ver lib/orden-productos.ts):
+  // lo último que entró arriba. No se puede pedir en el `orderBy` — los SKU son
+  // numéricos sin relleno de ceros, así que el orden de texto los mezcla — de
+  // modo que se traen las claves de orden de todo lo que matchea, se ordena y se
+  // corta la página acá. Ese primer findMany reemplaza al count: siguen siendo
+  // dos consultas. `orden`/`dir` (el inventario) eligen otra columna; sin ellos
+  // (/pos, /movimientos) el orden no cambia.
+  const ordenParam = searchParams.get("orden");
+  const orden = esCampoOrden(ordenParam) ? ordenParam : null;
+  const dir = searchParams.get("dir") === "asc" ? "asc" : "desc";
+
+  const [filasClave, stockMinimoGeneral] = await Promise.all([
+    prisma.product.findMany({
+      where,
+      select: {
+        id: true, sku: true, name: true, brand: true, price: true, storePrice: true,
+        stock: true, stockMinimo: true, stockTienda: true, stockAlmacen: true, trackInventory: true,
+        categories: { select: { name: true } },
+      },
+    }),
+    leerStockMinimoGeneral(),
+  ]);
+  const claves = filasClave
+    .filter((c) => stockFilter !== "low" || esStockBajo(c, stockMinimoGeneral))
+    .map((c) => ({
+    ...c,
+    price:      Number(c.price),
+    storePrice: c.storePrice != null ? Number(c.storePrice) : null,
+    // La misma categoría que muestra la tabla.
+    categoria:  c.categories[0]?.name ?? null,
+  }));
+  claves.sort(orden ? comparadorDe(orden, dir) : compararProductos);
 
   const idsPagina = claves.slice(skip, skip + limit).map((c) => c.id);
   const filas = idsPagina.length
@@ -143,5 +167,6 @@ export async function GET(req: NextRequest) {
     total,
     pages: Math.ceil(total / limit),
     page,
+    stockMinimoGeneral,
   });
 }

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { esStockBajo } from "@/lib/stock-minimo";
+import { leerStockMinimoGeneral } from "@/lib/stock-minimo-config";
 import {
   esFechaISO,
   esPeriodo,
@@ -86,7 +88,7 @@ export async function GET(req: NextRequest) {
 
   const whereDocs = { createdAt: { gte: desde, lte: hasta }, status: { in: [...ESTADOS] } };
 
-  const [docs, docsPrevios, itemsPorProducto, lowStock] = await Promise.all([
+  const [docs, docsPrevios, itemsPorProducto, conStock, stockMinimoGeneral] = await Promise.all([
     // El gráfico necesita el `createdAt` de cada venta, así que el periodo
     // activo sí se trae por filas; van acotadas por MAX_DIAS.
     prisma.saleDocument.findMany({
@@ -118,21 +120,25 @@ export async function GET(req: NextRequest) {
       _sum: { quantity: true, lineTotal: true },
     }),
     // El stock bajo es estado de hoy, no del periodo: queda fuera del rango.
+    // El umbral es por producto (o el general), así que no cabe en el `where`:
+    // se traen los que tienen stock y se filtran abajo.
     prisma.product.findMany({
-      where: { active: true, stock: { gt: 0, lte: 5 } },
+      where: { active: true, stock: { gt: 0 } },
       orderBy: { stock: "asc" },
-      take: 8,
       select: {
         id: true,
         name: true,
         sku: true,
         stock: true,
+        stockMinimo: true,
         stockTienda: true,
         stockAlmacen: true,
         categories: { select: { name: true }, take: 1 },
       },
     }),
+    leerStockMinimoGeneral(),
   ]);
+  const lowStock = conStock.filter((p) => esStockBajo(p, stockMinimoGeneral)).slice(0, 8);
 
   // ── Totales ────────────────────────────────────────────────────────────────
   const totalVentas = docs.reduce((s, d) => s + cobrado(d), 0);
