@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { valorSku, compararProductos, siguienteSku, type ClaveDeOrden } from "@/lib/orden-productos";
+import {
+  valorSku, compararProductos, comparadorDe, siguienteSku,
+  type ClaveDeOrden, type ClaveDeOrdenCompleta, type CampoOrden,
+} from "@/lib/orden-productos";
 
 const p = (sku: string | null, name = "x"): ClaveDeOrden => ({ sku, name });
 
@@ -59,5 +62,41 @@ describe("siguienteSku", () => {
   it("arranca en 1 con el catalogo vacio", () => {
     expect(siguienteSku([])).toBe("1");
     expect(siguienteSku([null, "sin-numero"])).toBe("1");
+  });
+});
+
+describe("comparadorDe", () => {
+  const q = (o: Partial<ClaveDeOrdenCompleta> & { sku: string }): ClaveDeOrdenCompleta => ({
+    name: "x", brand: null, categoria: null, price: 0, storePrice: null,
+    stockTienda: 0, stockAlmacen: 0, trackInventory: true, ...o,
+  });
+  const skus = (items: ClaveDeOrdenCompleta[], campo: CampoOrden, dir: "asc" | "desc") =>
+    [...items].sort(comparadorDe(campo, dir)).map((i) => i.sku);
+
+  it("ordena por nombre en los dos sentidos, sin distinguir mayúsculas ni tildes", () => {
+    const items = [q({ sku: "1", name: "óptica" }), q({ sku: "2", name: "Armazón" }), q({ sku: "3", name: "lente" })];
+    expect(skus(items, "nombre", "asc")).toEqual(["2", "3", "1"]);
+    expect(skus(items, "nombre", "desc")).toEqual(["1", "3", "2"]);
+  });
+
+  it("ordena el SKU como número también en ascendente", () => {
+    const items = [q({ sku: "697" }), q({ sku: "97" }), q({ sku: "0045" })];
+    expect(skus(items, "sku", "asc")).toEqual(["0045", "97", "697"]);
+  });
+
+  it("manda lo vacío al final en las dos direcciones", () => {
+    const items = [q({ sku: "1", storePrice: 50 }), q({ sku: "2", storePrice: null }), q({ sku: "3", storePrice: 20 })];
+    expect(skus(items, "precioTienda", "asc")).toEqual(["3", "1", "2"]);
+    expect(skus(items, "precioTienda", "desc")).toEqual(["1", "3", "2"]);
+  });
+
+  it("no ordena por stock lo que no lleva inventario", () => {
+    const items = [q({ sku: "1", stockTienda: 3 }), q({ sku: "2", stockTienda: 0, trackInventory: false }), q({ sku: "3", stockTienda: 0 })];
+    expect(skus(items, "stockTienda", "asc")).toEqual(["3", "1", "2"]);
+  });
+
+  it("desempata con el orden por defecto", () => {
+    const items = [q({ sku: "10", brand: "Ray-Ban" }), q({ sku: "30", brand: "Ray-Ban" }), q({ sku: "20", brand: "Oakley" })];
+    expect(skus(items, "marca", "asc")).toEqual(["20", "30", "10"]);
   });
 });

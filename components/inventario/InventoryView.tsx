@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Search, Plus, Package, ChevronLeft, ChevronRight, X, Trash2, RotateCcw } from "lucide-react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
+import { Search, Plus, Package, ChevronLeft, ChevronRight, X, Trash2, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { toast } from "sonner";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
-import { ORIGEN_DE, ORIGEN_LABEL, type TipoMovimiento } from "@/lib/stock-movimiento";
+import { STOCK_MINIMO_POR_DEFECTO, umbralDe } from "@/lib/stock-minimo";
+import type { CampoOrden, DireccionOrden } from "@/lib/orden-productos";
 
 interface Product {
   id: string;
@@ -22,6 +23,8 @@ interface Product {
   categories: { id: string; name: string }[];
   active: boolean;
   trackInventory: boolean;
+  /** Umbral propio de «stock bajo». Null = rige el general. */
+  stockMinimo: number | null;
   incluyeEstuche: boolean;
   incluyeLiquido: boolean;
   accesorioVenta: "ESTUCHE" | "LIQUIDO" | null;
@@ -34,6 +37,7 @@ interface Stats {
   lowCount: number;
   outCount: number;
   inactiveCount: number;
+  stockMinimoGeneral: number;
 }
 
 type StockFilter = "all" | "low" | "out";
@@ -54,10 +58,50 @@ const ESTADO_LABEL: Record<EstadoFilter, string> = {
 
 const PAGE_SIZE = 48;
 
+type Orden = { campo: CampoOrden; dir: DireccionOrden };
+
+/** El mismo que aplica la API sin parámetros: lo último que entró arriba. */
+const ORDEN_POR_DEFECTO: Orden = { campo: "sku", dir: "desc" };
+
+/** Al elegir una columna nueva: el texto de la A a la Z, los números de mayor a menor. */
+const DIR_INICIAL: Record<CampoOrden, DireccionOrden> = {
+  sku: "desc", nombre: "asc", categoria: "asc", marca: "asc",
+  precio: "desc", precioTienda: "desc", stockTienda: "desc", stockAlmacen: "desc",
+};
+
+function ThOrdenable({ campo, orden, onOrdenar, derecha, children }: {
+  campo: CampoOrden;
+  orden: Orden;
+  onOrdenar: (campo: CampoOrden) => void;
+  derecha?: boolean;
+  children: ReactNode;
+}) {
+  const activa = orden.campo === campo;
+  const Icono = !activa ? ArrowUpDown : orden.dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <th
+      aria-sort={activa ? (orden.dir === "asc" ? "ascending" : "descending") : "none"}
+      className={`px-4 py-2.5 border-b border-border ${derecha ? "text-right" : "text-left"}`}
+    >
+      <button
+        type="button"
+        onClick={() => onOrdenar(campo)}
+        className={`inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.06em] font-medium transition-colors hover:text-ink ${
+          activa ? "text-ink" : "text-ink-3"
+        } ${derecha ? "flex-row-reverse" : ""}`}
+      >
+        {children}
+        <Icono size={11} className={activa ? "" : "opacity-40"} />
+      </button>
+    </th>
+  );
+}
+
 // ─── Edit Modal ───────────────────────────────────────────────────────────────
 
 interface EditModalProps {
   product: Product;
+  stockMinimoGeneral: number;
   onClose: () => void;
   onSaved: (updated: Product) => void;
   onDeleted: (id: string) => void;
@@ -81,7 +125,7 @@ function Casilla({ marcada, onClick, texto }: { marcada: boolean; onClick: () =>
   );
 }
 
-function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
+function EditModal({ product, stockMinimoGeneral, onClose, onSaved, onDeleted }: EditModalProps) {
   const [form, setForm] = useState({
     name:           product.name,
     sku:            product.sku ?? "",
@@ -94,55 +138,15 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
     incluyeEstuche: product.incluyeEstuche,
     incluyeLiquido: product.incluyeLiquido,
     accesorioVenta: product.accesorioVenta ?? "",
+    stockMinimo:    product.stockMinimo != null ? String(product.stockMinimo) : "",
   });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
-  const [movTipo, setMovTipo] = useState<TipoMovimiento | null>(null);
-  const [movQty, setMovQty] = useState("");
-  const [movLoading, setMovLoading] = useState(false);
-  // El backend corta un movimiento idéntico y reciente por si es un reintento
-  // de algo que ya se guardó. Si de verdad es otro, se repite con `forzar`.
-  const [movDuplicado, setMovDuplicado] = useState(false);
 
   const set = (k: string, v: string | boolean) =>
     setForm((f) => ({ ...f, [k]: v }));
-
-  async function handleMovimiento(forzar = false) {
-    if (!movTipo) return;
-    const cantidad = Number(movQty);
-    if (!Number.isInteger(cantidad) || cantidad <= 0) {
-      setError("La cantidad debe ser un entero mayor a 0");
-      return;
-    }
-    const origen = ORIGEN_DE[movTipo];
-    if (origen && cantidad > product[origen]) {
-      setError(`Solo hay ${product[origen]} en ${ORIGEN_LABEL[origen]}`);
-      return;
-    }
-    setMovLoading(true);
-    setError("");
-    setMovDuplicado(false);
-    try {
-      const res = await fetch(`/api/productos/${product.id}/movimiento`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tipo: movTipo, cantidad, ...(forzar && { forzar: true }) }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        if (json.duplicadoProbable) setMovDuplicado(true);
-        throw new Error(json.error ?? "Error al registrar el movimiento");
-      }
-      onSaved(json.product);
-      onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo registrar el movimiento.");
-    } finally {
-      setMovLoading(false);
-    }
-  }
 
   async function handleSave() {
     setSaving(true);
@@ -166,11 +170,14 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
           incluyeEstuche: form.incluyeEstuche,
           incluyeLiquido: form.incluyeLiquido,
           accesorioVenta: form.accesorioVenta || null,
+          // Vacío = vuelve al general.
+          stockMinimo:    form.stockMinimo.trim() || null,
         }),
       });
       const json = await res.json();
-      // El 409 del accesorio dice qué producto ya lo es: vale la pena mostrarlo.
-      if (!res.ok) throw new Error(res.status === 409 ? json.error : "");
+      // El 409 del accesorio dice qué producto ya lo es, y el 400 qué valor no
+      // sirve: vale la pena mostrarlos.
+      if (!res.ok) throw new Error(res.status === 409 || res.status === 400 ? json.error : "");
       onSaved(json.product);
       onClose();
     } catch (e) {
@@ -313,78 +320,23 @@ function EditModal({ product, onClose, onSaved, onDeleted }: EditModalProps) {
                   {(Number(form.stockTienda) || 0) + (Number(form.stockAlmacen) || 0)}
                 </span>
               </div>
-            </div>
-          )}
-
-          {/* Movimientos de stock */}
-          {form.trackInventory && (
-            <div className="border border-border rounded-lg p-3 space-y-2.5">
-              <p className="text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium">Movimientos de stock</p>
-              {movTipo === null ? (
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => { setMovTipo("INGRESO"); setMovQty(""); setError(""); setMovDuplicado(false); }}
-                    title="Sumar unidades nuevas al almacén"
-                    className="px-3 py-2 text-[12.5px] font-medium text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors"
-                  >
-                    📥 Ingreso
-                  </button>
-                  <button
-                    onClick={() => { setMovTipo("TRASLADO"); setMovQty(""); setError(""); setMovDuplicado(false); }}
-                    disabled={product.stockAlmacen <= 0}
-                    title="Mover de almacén a tienda"
-                    className="px-3 py-2 text-[12.5px] font-medium text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors disabled:opacity-40"
-                  >
-                    🔄 A tienda
-                  </button>
-                  <button
-                    onClick={() => { setMovTipo("RETORNO"); setMovQty(""); setError(""); setMovDuplicado(false); }}
-                    disabled={product.stockTienda <= 0}
-                    title="Devolver de tienda a almacén"
-                    className="px-3 py-2 text-[12.5px] font-medium text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors disabled:opacity-40"
-                  >
-                    ↩️ A almacén
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-[11.5px] text-ink-3">
-                    {movTipo === "INGRESO"
-                      ? "Sumar unidades nuevas al almacén."
-                      : movTipo === "TRASLADO"
-                        ? `Mover de almacén a tienda · disponible en almacén: ${product.stockAlmacen}`
-                        : `Devolver de tienda a almacén · disponible en tienda: ${product.stockTienda}`}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="1"
-                      autoFocus
-                      className="flex-1 bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink font-mono focus:outline-none focus:border-accent"
-                      value={movQty}
-                      onChange={(e) => setMovQty(e.target.value)}
-                      placeholder="Cantidad"
-                    />
-                    <button
-                      onClick={() => { setMovTipo(null); setMovQty(""); setError(""); setMovDuplicado(false); }}
-                      className="px-3 py-2 text-[12.5px] text-ink-3 hover:text-ink bg-surface-light hover:bg-border rounded-lg border border-border transition-colors"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      onClick={() => handleMovimiento(movDuplicado)}
-                      disabled={movLoading}
-                      className="px-4 py-2 text-[12.5px] font-medium bg-accent text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors"
-                    >
-                      {movLoading
-                        ? "Guardando…"
-                        : movDuplicado
-                          ? "Sí, registrar otro"
-                          : "Confirmar"}
-                    </button>
-                  </div>
-                </div>
-              )}
+              <div className="col-span-2">
+                <label className="block text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">
+                  Stock mínimo
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink font-mono focus:outline-none focus:border-accent"
+                  value={form.stockMinimo}
+                  onChange={(e) => set("stockMinimo", e.target.value)}
+                  placeholder={`General (${stockMinimoGeneral})`}
+                />
+                <p className="text-[11.5px] text-ink-3 mt-1">
+                  Con este total o menos sale como «stock bajo». Vacío usa el general.
+                </p>
+              </div>
             </div>
           )}
 
@@ -734,6 +686,83 @@ function NewProductModal({ onClose, onCreated }: NewModalProps) {
   );
 }
 
+// ─── Stock mínimo general ─────────────────────────────────────────────────────
+
+function StockMinimoModal({ actual, onClose, onSaved }: {
+  actual: number;
+  onClose: () => void;
+  onSaved: (valor: number) => void;
+}) {
+  const [valor, setValor] = useState(String(actual));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSave() {
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/productos/stock-minimo", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stockMinimo: valor.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "");
+      onSaved(json.stockMinimo);
+      onClose();
+    } catch (e) {
+      setError((e instanceof Error && e.message) || "No se pudo guardar. Intentá de nuevo.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm animate-fade-in">
+      <div className="bg-surface border border-border rounded-2xl shadow-xl w-full max-w-sm animate-scale-in">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="text-[15px] font-semibold text-ink">Stock mínimo</h2>
+          <button onClick={onClose} className="text-ink-3 hover:text-ink transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <p className="text-[12.5px] text-ink-3">
+            Un producto con este stock total o menos (y más de 0) cuenta como «stock bajo».
+            Aplica a todos los que no tengan un mínimo propio en «Editar producto».
+          </p>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            autoFocus
+            className="w-full bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink font-mono focus:outline-none focus:border-accent"
+            value={valor}
+            onChange={(e) => setValor(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
+          />
+          {error && <p className="text-[12px] text-danger">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-3 border-t border-border">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-[13px] font-medium text-ink-2 hover:text-ink transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !valor.trim()}
+            className="px-4 py-1.5 text-[13px] font-medium bg-ink text-white rounded-lg hover:bg-ink-2 disabled:opacity-50 transition-colors"
+          >
+            {saving ? "Guardando…" : "Guardar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main View ────────────────────────────────────────────────────────────────
 
 export function InventoryView() {
@@ -748,10 +777,22 @@ export function InventoryView() {
   const [totalFiltered, setTotalFiltered] = useState(0);
   const [stats, setStats] = useState<Stats>({
     total: 0, totalUnits: 0, totalValue: 0, lowCount: 0, outCount: 0, inactiveCount: 0,
+    stockMinimoGeneral: STOCK_MINIMO_POR_DEFECTO,
   });
   const [reactivando, setReactivando] = useState<string | null>(null);
   const [editing,    setEditing]    = useState<Product | null>(null);
   const [showNew,    setShowNew]    = useState(false);
+  const [orden,      setOrden]      = useState<Orden>(ORDEN_POR_DEFECTO);
+  const [editandoMinimo, setEditandoMinimo] = useState(false);
+
+  function ordenarPor(campo: CampoOrden) {
+    setPage(1);
+    setOrden((o) =>
+      o.campo === campo
+        ? { campo, dir: o.dir === "asc" ? "desc" : "asc" }
+        : { campo, dir: DIR_INICIAL[campo] },
+    );
+  }
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 300);
@@ -777,13 +818,17 @@ export function InventoryView() {
     if (debouncedQuery) params.set("q", debouncedQuery);
     if (filter !== "all") params.set("stockFilter", filter);
     if (estado !== "activos") params.set("estado", estado);
+    if (orden.campo !== ORDEN_POR_DEFECTO.campo || orden.dir !== ORDEN_POR_DEFECTO.dir) {
+      params.set("orden", orden.campo);
+      params.set("dir", orden.dir);
+    }
     const res = await fetch(`/api/productos?${params}`);
     const json = await res.json();
     setProducts(json.products ?? []);
     setTotalPages(json.pages ?? 1);
     setTotalFiltered(json.total ?? 0);
     setLoading(false);
-  }, [debouncedQuery, filter, estado, page]);
+  }, [debouncedQuery, filter, estado, orden, page]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
@@ -827,7 +872,7 @@ export function InventoryView() {
     if (!p.trackInventory) return "service";
     const total = p.stockTienda + p.stockAlmacen;
     if (total === 0) return "out";
-    if (total <= 5) return "low";
+    if (total <= umbralDe(p, stats.stockMinimoGeneral)) return "low";
     return "ok";
   };
 
@@ -836,9 +881,22 @@ export function InventoryView() {
       {editing && (
         <EditModal
           product={editing}
+          stockMinimoGeneral={stats.stockMinimoGeneral}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
           onDeleted={handleDeleted}
+        />
+      )}
+      {editandoMinimo && (
+        <StockMinimoModal
+          actual={stats.stockMinimoGeneral}
+          onClose={() => setEditandoMinimo(false)}
+          onSaved={() => {
+            // Cambia qué cuenta como bajo: el contador, los colores y, si el
+            // filtro está puesto, la lista misma.
+            refrescarStats();
+            fetchProducts();
+          }}
         />
       )}
       {showNew && (
@@ -867,11 +925,25 @@ export function InventoryView() {
           {[
             { label: "Productos activos", value: String(stats.total), sub: `${stats.totalUnits.toLocaleString()} unidades` },
             { label: "Valor de inventario", value: formatPEN(stats.totalValue), sub: "a precio de venta", color: "text-success" },
-            { label: "Stock bajo", value: String(stats.lowCount), sub: "Necesitan reposición", color: "text-warning" },
+            {
+              label: "Stock bajo", value: String(stats.lowCount), color: "text-warning",
+              sub: `${stats.stockMinimoGeneral} unidades o menos`,
+              onEditar: () => setEditandoMinimo(true),
+            },
             { label: "Agotados", value: String(stats.outCount), sub: "Sin disponibilidad", color: "text-danger" },
-          ].map((s) => (
+          ].map((s: { label: string; value: string; sub: string; color?: string; onEditar?: () => void }) => (
             <div key={s.label} className="bg-surface border border-border rounded-xl p-4">
-              <div className="text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">{s.label}</div>
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium">{s.label}</div>
+                {s.onEditar && (
+                  <button
+                    onClick={s.onEditar}
+                    className="text-[11.5px] font-medium text-accent hover:underline"
+                  >
+                    Cambiar mínimo
+                  </button>
+                )}
+              </div>
               <div className={`text-[22px] font-bold font-mono tracking-tight ${s.color ?? "text-ink"}`}>{s.value}</div>
               <div className="text-[11.5px] text-ink-3 mt-1">{s.sub}</div>
             </div>
@@ -934,14 +1006,14 @@ export function InventoryView() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-surface-light">
-                  <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Producto</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">SKU</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Categoría</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Marca</th>
-                  <th className="text-right px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Precio Web</th>
-                  <th className="text-right px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Precio tienda</th>
-                  <th className="text-right px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Tienda</th>
-                  <th className="text-right px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium border-b border-border">Almacén</th>
+                  <ThOrdenable campo="nombre" orden={orden} onOrdenar={ordenarPor}>Producto</ThOrdenable>
+                  <ThOrdenable campo="sku" orden={orden} onOrdenar={ordenarPor}>SKU</ThOrdenable>
+                  <ThOrdenable campo="categoria" orden={orden} onOrdenar={ordenarPor}>Categoría</ThOrdenable>
+                  <ThOrdenable campo="marca" orden={orden} onOrdenar={ordenarPor}>Marca</ThOrdenable>
+                  <ThOrdenable campo="precio" orden={orden} onOrdenar={ordenarPor} derecha>Precio Web</ThOrdenable>
+                  <ThOrdenable campo="precioTienda" orden={orden} onOrdenar={ordenarPor} derecha>Precio tienda</ThOrdenable>
+                  <ThOrdenable campo="stockTienda" orden={orden} onOrdenar={ordenarPor} derecha>Tienda</ThOrdenable>
+                  <ThOrdenable campo="stockAlmacen" orden={orden} onOrdenar={ordenarPor} derecha>Almacén</ThOrdenable>
                   <th className="px-4 py-2.5 border-b border-border"></th>
                 </tr>
               </thead>
