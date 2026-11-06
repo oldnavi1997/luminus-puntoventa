@@ -18,6 +18,9 @@ export async function GET(req: NextRequest) {
       document: {
         status: { in: ["ACCEPTED", "PENDING", "PARTIAL"] },
         location,
+        // Restock refleja lo que salió del mostrador: las ventas web se surten
+        // según el desglose del ecommerce y no deben pedir reposición de tienda.
+        channel: { not: "WEB" },
         createdAt: { gte: since },
       },
     },
