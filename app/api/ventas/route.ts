@@ -12,13 +12,9 @@ import { DocumentType, DocumentStatus } from "@/app/generated/prisma/client";
 import { reservarCorrelativo } from "@/lib/document-serie";
 import { reindexarTrasResponder } from "@/lib/reindex-ecommerce";
 import { descontarAccesorios } from "@/lib/accesorios-venta";
+import { MAX_RESULTADOS, esBusqueda, rangoDelDia, whereBusquedaVentas } from "@/lib/busqueda-ventas";
 
 // ─── GET: historial de ventas por fecha ──────────────────────────────────────
-
-/** Tope de filas transferidas al buscar; las stats siguen siendo del total. */
-const MAX_RESULTADOS = 100;
-/** Menos caracteres que esto no filtra nada util y solo genera ruido. */
-const MIN_BUSQUEDA = 2;
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -26,38 +22,17 @@ export async function GET(req: NextRequest) {
 
   const allHistory = req.nextUrl.searchParams.get("all") === "true" && session.user.role === "ADMIN";
   const date = req.nextUrl.searchParams.get("date") ?? new Date().toISOString().slice(0, 10);
-  const start = new Date(`${date}T00:00:00-05:00`);
-  const end   = new Date(`${date}T23:59:59.999-05:00`);
-
   // Buscar manda sobre la fecha: quien busca no sabe de que dia es la venta.
   // Disponible tambien para cajeros, que necesitan hallar una venta vieja para
   // reimprimir un ticket o cobrar un saldo (borrarla sigue siendo de ADMIN).
   const q = (req.nextUrl.searchParams.get("q") ?? "").trim();
-  const buscando = q.length >= MIN_BUSQUEDA;
-  // SKU sin ceros a la izquierda ("0632" -> "632"), mismo truco que /api/productos.
-  const qStripped = q.replace(/^0+/, "") || q;
+  const buscando = esBusqueda(q);
 
   const where = buscando
-    ? {
-        OR: [
-          { buyerName:      { contains: q, mode: "insensitive" as const } },
-          { buyerPhone:     { contains: q } },
-          { buyerDocNumber: { contains: q } },
-          { fullNumber:     { contains: q, mode: "insensitive" as const } },
-          // description es el nombre del producto al momento de vender; name y sku
-          // son los del catalogo hoy. Con los tres, un producto renombrado se
-          // encuentra tanto por el nombre viejo como por el nuevo.
-          { items: { some: { description:     { contains: q, mode: "insensitive" as const } } } },
-          { items: { some: { product: { name: { contains: q, mode: "insensitive" as const } } } } },
-          { items: { some: { product: { sku:  { contains: q, mode: "insensitive" as const } } } } },
-          ...(qStripped !== q
-            ? [{ items: { some: { product: { sku: { contains: qStripped, mode: "insensitive" as const } } } } }]
-            : []),
-        ],
-      }
+    ? whereBusquedaVentas(q)
     : allHistory
       ? {}
-      : { createdAt: { gte: start, lte: end } };
+      : { createdAt: rangoDelDia(date) };
 
   const docs = await prisma.saleDocument.findMany({
     where,

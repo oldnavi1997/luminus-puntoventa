@@ -5,6 +5,7 @@ import { ArrowRightLeft, X, CheckCircle, Clock, Search, UserCheck, UserX } from 
 import { useRouter } from "next/navigation";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { formatPEN } from "@/lib/utils";
+import { esBusqueda, hoyEnLima } from "@/lib/busqueda-ventas";
 
 interface NVDoc {
   id: string;
@@ -226,20 +227,43 @@ export function ConvertirView() {
   const [docs, setDocs]         = useState<NVDoc[]>([]);
   const [loading, setLoading]   = useState(true);
   const [convertDoc, setConvertDoc] = useState<NVDoc | null>(null);
+  const [date, setDate]         = useState(hoyEnLima);
+  const [query, setQuery]       = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [limite, setLimite]     = useState<number | null>(null);
+
+  // Mismo patrón inline que VentasView: el repo no tiene un hook de debounce.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const buscando = esBusqueda(debouncedQuery);
 
   const fetchDocs = useCallback(async () => {
     setLoading(true);
-    const res  = await fetch("/api/ventas/convertibles?limit=200");
-    const json = await res.json();
-    setDocs(json.docs ?? []);
-    setLoading(false);
-  }, []);
+    const params = new URLSearchParams();
+    // Buscar ignora la fecha: el servidor recorre todo el historial.
+    if (buscando) params.set("q", debouncedQuery.trim());
+    else params.set("date", date);
+    try {
+      const res  = await fetch(`/api/ventas/convertibles?${params}`);
+      const json = await res.json();
+      setDocs(json.docs ?? []);
+      setLimite(json.limite ?? null);
+    } finally {
+      setLoading(false);
+    }
+  }, [buscando, debouncedQuery, date]);
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
 
   function handleConverted() {
     fetchDocs();
   }
+
+  const today = hoyEnLima();
+  const plural = docs.length !== 1 ? "s" : "";
 
   return (
     <div className="flex flex-col h-full">
@@ -249,21 +273,69 @@ export function ConvertirView() {
       />
 
       <div className="flex-1 overflow-auto p-6">
-        {docs.length === 0 && !loading ? (
-          <div className="bg-surface border border-border rounded-xl p-12 text-center">
-            <ArrowRightLeft size={32} className="mx-auto text-ink-4 mb-3 opacity-40" />
-            <p className="text-[14px] font-medium text-ink mb-1">Sin notas pendientes</p>
-            <p className="text-[13px] text-ink-3">Todas las notas de venta han sido convertidas.</p>
-          </div>
-        ) : (
           <div className="bg-surface border border-border rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-              <p className="text-[12.5px] text-ink-3">
-                {loading ? "Cargando..." : `${docs.length} nota${docs.length !== 1 ? "s" : ""} pendiente${docs.length !== 1 ? "s" : ""} de conversión`}
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-border flex-wrap">
+              <div className="relative flex-1 min-w-56 max-w-80">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" />
+                <input
+                  className="w-full bg-surface-light border border-border rounded-lg pl-8 pr-8 py-2 text-[13px] text-ink placeholder-ink-4 focus:outline-none focus:border-accent"
+                  placeholder="Buscar por cliente, DNI, celular, N° de nota, montura o SKU..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                {query && (
+                  <button
+                    onClick={() => setQuery("")}
+                    title="Limpiar búsqueda"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-4 hover:text-ink transition-colors"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+              {buscando ? (
+                <span className="text-[11.5px] text-ink-4">en todo el historial</span>
+              ) : (
+                <>
+                  <input
+                    type="date"
+                    value={date}
+                    max={today}
+                    onChange={(e) => e.target.value && setDate(e.target.value)}
+                    className="bg-surface-light border border-border rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-accent"
+                  />
+                  {date !== today && (
+                    <button
+                      onClick={() => setDate(today)}
+                      className="text-[12px] text-ink-3 hover:text-ink px-3 py-2 bg-surface-light border border-border rounded-lg transition-colors"
+                    >
+                      Hoy
+                    </button>
+                  )}
+                </>
+              )}
+              <p className="text-[12.5px] text-ink-3 ml-auto">
+                {loading
+                  ? "Cargando..."
+                  : limite !== null && docs.length >= limite
+                    ? `Primeras ${docs.length} — afina la búsqueda`
+                    : `${docs.length} nota${plural} pendiente${plural} de conversión`}
               </p>
             </div>
 
-            {loading ? (
+            {!loading && docs.length === 0 ? (
+              <div className="p-12 text-center">
+                <ArrowRightLeft size={32} className="mx-auto text-ink-4 mb-3 opacity-40" />
+                <p className="text-[14px] font-medium text-ink mb-1">Sin notas pendientes</p>
+                <p className="text-[13px] text-ink-3">
+                  {buscando
+                    ? `Ninguna nota sin convertir coincide con «${debouncedQuery.trim()}»`
+                    : date === today
+                      ? "No hay notas de venta de hoy por convertir."
+                      : "No hay notas de venta de esa fecha por convertir."}
+                </p>
+              </div>
+            ) : loading ? (
               <div className="p-8 text-center text-ink-3">Cargando notas de venta...</div>
             ) : (
               <table className="w-full border-collapse">
@@ -318,7 +390,6 @@ export function ConvertirView() {
               </table>
             )}
           </div>
-        )}
       </div>
 
       {convertDoc && (

@@ -26,6 +26,9 @@ export async function GET(
 ) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Solo administradores" }, { status: 403 });
+  }
 
   const { id } = await params;
   const doc = await prisma.saleDocument.findUnique({
@@ -66,6 +69,9 @@ export async function PUT(
 ) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Solo administradores" }, { status: 403 });
+  }
 
   const { id } = await params;
   const parsed = envioSchema.safeParse(await req.json().catch(() => null));

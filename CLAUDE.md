@@ -358,7 +358,8 @@ texto de la etiqueta.
 - **Se crea después de cobrar**, no en el carrito: botón «Envío» al terminar la venta, el icono
   de etiqueta del historial (`/ventas`) y «Etiqueta de envío» en Ventas web (`/pedidos`). Todos
   abren `EnvioModal` → `GET/PUT /api/ventas/[id]/envio`. Guardar e imprimir es un paso: lo que
-  sale en papel es lo que queda guardado. No toca la venta, así que vale para un comprobante ya
+  sale en papel es lo que queda guardado. **Sólo para ADMIN**: los botones no se muestran al cajero y
+  las dos rutas (`/api/ventas/[id]/envio`, `/api/envios/shalom`) responden 403. No toca la venta, así que vale para un comprobante ya
   aceptado por SUNAT; `POST /api/ventas` no sabe nada de envíos.
 - **Una venta web no trae fila**: el GET la propone desde su `Order` (`propuestaDeEnvio`) hasta
   que alguien la guarda. Olva va como dirección; la «agencia» Shalom del checkout es texto libre

@@ -22,7 +22,7 @@ const MAIN_NAV = [
   { href: "/comprobantes", label: "Comprobantes",        icon: FileText,        shortcut: "F3", roles: null },
   { href: "/convertir",    label: "Convertir NV",        icon: ArrowRightLeft,  shortcut: "F4", roles: null },
   { href: "/dashboard",    label: "Dashboard",           icon: BarChart2,       shortcut: "F5", roles: ["ADMIN"] },
-  { href: "/ventas",       label: "Historial",           icon: History,         shortcut: "F6", roles: null },
+  { href: "/ventas",       label: "Historial de ventas", icon: History,         shortcut: "F6", roles: null },
   { href: "/pendientes",   label: "Pendientes",          icon: Timer,           shortcut: "F7", roles: null },
   { href: "/pedidos",      label: "Ventas web",          icon: Globe,           shortcut: null, roles: ["ADMIN"] },
   { href: "/sesion",       label: "Sesión de Caja",      icon: Clock,           shortcut: "F8", roles: null },

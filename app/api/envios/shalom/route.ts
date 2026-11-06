@@ -53,6 +53,9 @@ function celularParaShalom(celular: string): string {
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Solo administradores" }, { status: 403 });
+  }
 
   const params = req.nextUrl.searchParams;
   const fecha = params.get("fecha") ?? "";
