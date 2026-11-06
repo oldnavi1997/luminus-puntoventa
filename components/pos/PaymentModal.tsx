@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { X, Banknote, CreditCard, Smartphone, CheckCircle, AlertCircle, Clock, Printer, Send, FileText, Layers, Tag } from "lucide-react";
 import { useCartStore } from "@/stores/cartStore";
 import { formatPEN } from "@/lib/utils";
@@ -44,6 +45,9 @@ const PAYMENT_METHODS = [
 ];
 
 export function PaymentModal({ posSessionId, cashierId, total, customer, discount, docType, stockSource = "TIENDA", onClose }: PaymentModalProps) {
+  const { data: session } = useSession();
+  // Etiquetas de envío: sólo administradores (igual que en el Historial de ventas).
+  const isAdmin = session?.user.role === "ADMIN";
   const [step, setStep] = useState<Step>("method");
   const [method, setMethod] = useState<PaymentMethod>("EFECTIVO");
   const [efectivoAmount, setEfectivoAmount] = useState("");
@@ -532,13 +536,15 @@ export function PaymentModal({ posSessionId, cashierId, total, customer, discoun
                 </div>
               )}
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className={`grid ${isAdmin ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
                 <button onClick={() => setShowReceipt(true)} className="flex items-center justify-center gap-1.5 bg-surface-light hover:bg-border rounded-xl py-2.5 text-[13px] text-ink transition-colors border border-border">
                   <Printer size={14} /> Ticket
                 </button>
-                <button onClick={() => setShowEnvio(true)} className="flex items-center justify-center gap-1.5 bg-surface-light hover:bg-border rounded-xl py-2.5 text-[13px] text-ink transition-colors border border-border">
-                  <Tag size={14} /> Envío
-                </button>
+                {isAdmin && (
+                  <button onClick={() => setShowEnvio(true)} className="flex items-center justify-center gap-1.5 bg-surface-light hover:bg-border rounded-xl py-2.5 text-[13px] text-ink transition-colors border border-border">
+                    <Tag size={14} /> Envío
+                  </button>
+                )}
                 <a
                   href={`/api/ventas/${saleResult.id}/pdf`}
                   target="_blank"

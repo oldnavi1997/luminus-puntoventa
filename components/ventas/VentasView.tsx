@@ -11,6 +11,7 @@ import { EnvioModal } from "@/components/envio/EnvioModal";
 import { ExportarShalomModal } from "@/components/envio/ExportarShalomModal";
 import type { PrescriptionData } from "@/types";
 import { TIPOS_DOCUMENTO, tieneDocumento, validarDocumento } from "@/lib/documento";
+import { MIN_BUSQUEDA } from "@/lib/busqueda-ventas";
 
 interface SaleItem {
   description: string;
@@ -65,8 +66,6 @@ const METHOD_LABEL: Record<string, string> = {
   MIXTO:    "Mixto",
 };
 
-/** Debe coincidir con MIN_BUSQUEDA de app/api/ventas/route.ts. */
-const MIN_BUSQUEDA = 2;
 
 const LOCATION_LABEL: Record<string, string> = { TIENDA: "Tienda", ALMACEN: "Almacén", WEB: "Web" };
 
@@ -295,6 +294,7 @@ export function VentasView() {
                 ? `${filteredDocs.length} de ${total} — afina la busqueda`
                 : `${filteredDocs.length} ventas`}
             </span>
+            {isAdmin && (
             <button
               onClick={() => setExportandoShalom(true)}
               className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-2 rounded-lg border bg-surface-light text-ink-3 border-border hover:text-ink transition-colors"
@@ -303,6 +303,7 @@ export function VentasView() {
               <FileSpreadsheet size={13} />
               Exportar a Shalom
             </button>
+            )}
           </div>
 
           {loading ? (
@@ -464,6 +465,7 @@ export function VentasView() {
                             >
                               <FileDown size={13} />
                             </a>
+                            {isAdmin && (
                             <button
                               onClick={() => setEnvioDoc(doc)}
                               className={`p-1 rounded-lg transition-colors ${doc.envio?.guardado ? "text-accent hover:bg-accent/10" : "text-ink-4 hover:text-ink-2 hover:bg-surface-light"}`}
@@ -471,6 +473,7 @@ export function VentasView() {
                             >
                               <Tag size={13} />
                             </button>
+                            )}
                             <button
                               onClick={() => setEditingDoc(doc)}
                               className={`p-1 rounded-lg transition-colors ${hasExtra ? "text-accent hover:bg-accent/10" : "text-ink-4 hover:text-ink-2 hover:bg-surface-light"}`}
