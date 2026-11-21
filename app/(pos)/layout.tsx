@@ -13,7 +13,7 @@ export default async function PosLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-primary">
+    <div className="flex flex-col md:flex-row h-dvh overflow-hidden bg-primary">
       <Sidebar user={session.user} />
       <main className="flex-1 min-w-0 overflow-auto flex flex-col">
         {children}
