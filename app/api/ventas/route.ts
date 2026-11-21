@@ -78,6 +78,9 @@ export async function GET(req: NextRequest) {
         ? { courier: d.order.shippingCourier.toUpperCase(), guardado: false }
         : null,
     montoAdelanto: d.montoAdelanto ? Number(d.montoAdelanto) : null,
+    // Desglose del pago mixto (del adelanto, si la venta fue con adelanto) y del saldo.
+    pagoMixto: desgloseMixto(d.paymentMethod, d.montoEfectivo, d.montoTarjeta, d.montoYape),
+    saldoPagoMixto: desgloseMixto(d.saldoPaymentMethod, d.saldoMontoEfectivo, d.saldoMontoTarjeta, d.saldoMontoYape),
     location: d.location,
     notes: d.notes ?? null,
     prescription: d.prescription ?? null,
@@ -418,4 +421,14 @@ export async function POST(req: NextRequest) {
     const message = err instanceof Error ? err.message : "Error al procesar la venta";
     return NextResponse.json({ error: message }, { status: 422 });
   }
+}
+
+type MontoDb = { toString(): string } | null;
+
+/** Montos por método de un pago MIXTO; null si no es mixto o no se guardó el desglose. */
+function desgloseMixto(metodo: string | null, efectivo: MontoDb, tarjeta: MontoDb, yape: MontoDb) {
+  if (metodo !== "MIXTO") return null;
+  const n = (v: MontoDb) => (v == null ? 0 : Number(v));
+  const desglose = { efectivo: n(efectivo), tarjeta: n(tarjeta), yape: n(yape) };
+  return desglose.efectivo + desglose.tarjeta + desglose.yape > 0 ? desglose : null;
 }

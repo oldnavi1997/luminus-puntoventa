@@ -50,7 +50,16 @@ interface Sale {
   saldoCobradoPor?: { name: string | null } | null;
   saldoCobradoEn?:  string | null;
   saldoPaymentMethod?: string | null;
+  /** Montos por método cuando se pagó MIXTO (el adelanto, si hubo adelanto). */
+  pagoMixto?: DesglosePago | null;
+  saldoPagoMixto?: DesglosePago | null;
   items: SaleItem[];
+}
+
+interface DesglosePago {
+  efectivo: number;
+  tarjeta: number;
+  yape: number;
 }
 
 interface Stats {
@@ -406,6 +415,7 @@ export function VentasView() {
                         )}
                         <td className="px-4 py-3 border-b border-border text-[12.5px] text-ink-3">
                           {METHOD_LABEL[doc.paymentMethod] ?? doc.paymentMethod}
+                          {doc.pagoMixto && <DesglosePagoLineas desglose={doc.pagoMixto} />}
                         </td>
                         <td className="px-4 py-3 border-b border-border">
                           <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[doc.status] ?? "bg-surface-dark text-ink-3"}`}>
@@ -446,6 +456,11 @@ export function VentasView() {
                                   <span className="ml-1 text-[10px] opacity-70">({METHOD_LABEL[doc.saldoPaymentMethod] ?? doc.saldoPaymentMethod})</span>
                                 )}
                               </div>
+                              {doc.saldoPagoMixto && (
+                                <div className="flex justify-end">
+                                  <DesglosePagoLineas desglose={doc.saldoPagoMixto} />
+                                </div>
+                              )}
                             </div>
                           )}
                         </td>
@@ -698,6 +713,43 @@ function DatosAdicionales({ doc }: { doc: Sale }) {
   );
 }
 
+// ─── Desglose de un pago mixto ────────────────────────────────────────────────
+
+function partesDesglose(d: DesglosePago) {
+  return ([
+    ["Efectivo", d.efectivo],
+    ["Tarjeta",  d.tarjeta],
+    ["Yape",     d.yape],
+  ] as const).filter(([, monto]) => monto > 0);
+}
+
+/** Una línea por método, en letra chica (columna Pago, adelanto y saldo). */
+function DesglosePagoLineas({ desglose }: { desglose: DesglosePago }) {
+  return (
+    <div className="mt-0.5 space-y-0.5">
+      {partesDesglose(desglose).map(([label, monto]) => (
+        <div key={label} className="text-[10.5px] text-ink-4 font-mono whitespace-nowrap">
+          <span className="font-sans">{label}</span> {formatPEN(monto)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Chips por método para la tarjeta del celular. */
+function DesglosePagoChips({ desglose }: { desglose: DesglosePago }) {
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap mt-1.5 text-[11px]">
+      <span className="text-ink-4">Mixto:</span>
+      {partesDesglose(desglose).map(([label, monto]) => (
+        <span key={label} className="px-2 py-0.5 rounded-full border border-border text-ink-3">
+          {label} <span className="font-mono text-ink-2">{formatPEN(monto)}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ─── VentaCard (celular) ──────────────────────────────────────────────────────
 
 function VentaCard({
@@ -780,12 +832,17 @@ function VentaCard({
             )}
           </div>
 
+          {doc.pagoMixto && doc.montoAdelanto == null && (
+            <DesglosePagoChips desglose={doc.pagoMixto} />
+          )}
+
           {doc.montoAdelanto != null && saldo != null && (
             <div className="mt-2 grid grid-cols-2 gap-2 text-[11.5px] font-mono">
               <div className="rounded-lg border border-border px-2 py-1.5">
                 <div className="text-[10px] text-ink-4 font-sans uppercase tracking-wide">Adelanto</div>
                 <div className="text-ink-2">{formatPEN(doc.montoAdelanto)}</div>
                 <div className="text-[10px] text-ink-4">{METHOD_LABEL[doc.paymentMethod] ?? doc.paymentMethod}</div>
+                {doc.pagoMixto && <DesglosePagoLineas desglose={doc.pagoMixto} />}
               </div>
               <div className="rounded-lg border border-border px-2 py-1.5">
                 <div className="text-[10px] text-ink-4 font-sans uppercase tracking-wide">Saldo</div>
@@ -796,6 +853,7 @@ function VentaCard({
                     : <span className="text-amber-600 font-sans">Pendiente</span>}
                   {doc.saldoPaymentMethod && ` (${METHOD_LABEL[doc.saldoPaymentMethod] ?? doc.saldoPaymentMethod})`}
                 </div>
+                {doc.saldoPagoMixto && <DesglosePagoLineas desglose={doc.saldoPagoMixto} />}
               </div>
             </div>
           )}
