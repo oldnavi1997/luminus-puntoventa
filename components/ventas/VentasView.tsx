@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { ChevronDown, ChevronRight, Receipt as ReceiptIcon, X, Trash2, Pencil, Phone, User, Printer, Search, Undo2, IdCard , FileDown, Tag, FileSpreadsheet } from "lucide-react";
@@ -198,18 +198,18 @@ export function VentasView() {
     <div className="flex flex-col h-full">
       <ModuleHeader title="Historial de Ventas" subtitle="Ventas registradas en el punto de venta" />
 
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-3 md:p-6">
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-5">
+        <div className="grid grid-cols-3 gap-2 md:gap-3 mb-4 md:mb-5">
           {[
             { label: allHistory ? "Total ventas" : "Ventas del día", value: String(stats.countVentas), sub: "transacciones" },
             { label: "Total facturado",  value: formatPEN(stats.totalVentas),  sub: "monto bruto", color: "text-success" },
             { label: "Ticket promedio",  value: formatPEN(stats.ticketPromedio), sub: "por venta", color: "text-accent" },
           ].map((s) => (
-            <div key={s.label} className="bg-surface border border-border rounded-xl p-4">
-              <div className="text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1.5">{s.label}</div>
-              <div className={`text-[22px] font-bold font-mono tracking-tight ${s.color ?? "text-ink"}`}>{s.value}</div>
-              <div className="text-[11.5px] text-ink-3 mt-1">{s.sub}</div>
+            <div key={s.label} className="bg-surface border border-border rounded-xl p-3 md:p-4 min-w-0">
+              <div className="text-[9.5px] md:text-[11px] uppercase tracking-[0.06em] text-ink-3 font-medium mb-1 md:mb-1.5 leading-tight">{s.label}</div>
+              <div className={`text-[14px] sm:text-[18px] md:text-[22px] font-bold font-mono tracking-tight truncate ${s.color ?? "text-ink"}`}>{s.value}</div>
+              <div className="text-[10.5px] md:text-[11.5px] text-ink-3 mt-0.5 md:mt-1">{s.sub}</div>
             </div>
           ))}
         </div>
@@ -217,8 +217,8 @@ export function VentasView() {
         {/* Table */}
         <div className="bg-surface border border-border rounded-xl overflow-hidden">
           {/* Toolbar */}
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-border flex-wrap">
-            <div className="relative flex-1 min-w-56 max-w-80">
+          <div className="flex items-center gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-border flex-wrap">
+            <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-56 sm:max-w-80">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" />
               <input
                 className="w-full bg-surface-light border border-border rounded-lg pl-8 pr-8 py-2 text-[13px] text-ink placeholder-ink-4 focus:outline-none focus:border-accent"
@@ -316,6 +316,8 @@ export function VentasView() {
               </p>
             </div>
           ) : (
+            <>
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-surface-light">
@@ -347,11 +349,9 @@ export function VentasView() {
                   const timeSecondary = allHistory
                     ? createdDate.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })
                     : null;
-                  const hasExtra = doc.buyerPhone || doc.prescription;
                   return (
-                    <>
+                    <Fragment key={doc.id}>
                       <tr
-                        key={doc.id}
                         className="hover:bg-surface-light transition-colors cursor-pointer"
                         onClick={() => toggleExpand(doc.id)}
                       >
@@ -450,53 +450,20 @@ export function VentasView() {
                           )}
                         </td>
                         <td className="px-4 py-3 border-b border-border" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center gap-1.5 justify-end">
-                            <button
-                              onClick={() => setPrintDoc(doc)}
-                              className="p-1 rounded-lg text-ink-4 hover:text-ink-2 hover:bg-surface-light transition-colors"
-                              title="Imprimir ticket"
-                            >
-                              <Printer size={13} />
-                            </button>
-                            <a
-                              href={`/api/ventas/${doc.id}/pdf?descargar=1`}
-                              className="p-1 rounded-lg text-ink-4 hover:text-ink-2 hover:bg-surface-light transition-colors"
-                              title="Descargar PDF"
-                            >
-                              <FileDown size={13} />
-                            </a>
-                            {isAdmin && (
-                            <button
-                              onClick={() => setEnvioDoc(doc)}
-                              className={`p-1 rounded-lg transition-colors ${doc.envio?.guardado ? "text-accent hover:bg-accent/10" : "text-ink-4 hover:text-ink-2 hover:bg-surface-light"}`}
-                              title={doc.envio?.guardado ? `Etiqueta de envío (${doc.envio.courier})` : "Etiqueta de envío"}
-                            >
-                              <Tag size={13} />
-                            </button>
-                            )}
-                            <button
-                              onClick={() => setEditingDoc(doc)}
-                              className={`p-1 rounded-lg transition-colors ${hasExtra ? "text-accent hover:bg-accent/10" : "text-ink-4 hover:text-ink-2 hover:bg-surface-light"}`}
-                              title="Editar datos del cliente"
-                            >
-                              <Pencil size={13} />
-                            </button>
-                            {isAdmin && (
-                              <button
-                                onClick={() => setDeleteDoc(doc)}
-                                className="p-1 rounded-lg text-ink-4 hover:text-danger hover:bg-danger-soft transition-colors"
-                                title="Eliminar venta"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            )}
-                          </div>
+                          <AccionesVenta
+                            doc={doc}
+                            isAdmin={isAdmin}
+                            onPrint={() => setPrintDoc(doc)}
+                            onEnvio={() => setEnvioDoc(doc)}
+                            onEdit={() => setEditingDoc(doc)}
+                            onDelete={() => setDeleteDoc(doc)}
+                          />
                         </td>
                       </tr>
 
                       {open && (
                         <tr key={`${doc.id}-items`} className="bg-surface-light">
-                          <td colSpan={(hasAdelantos ? 10 : 9) + (hasMultipleLocations ? 1 : 0)} className="px-6 py-3 border-b border-border">
+                          <td colSpan={(hasAdelantos ? 11 : 10) + (hasMultipleLocations ? 1 : 0)} className="px-6 py-3 border-b border-border">
                             <table className="w-full">
                               <thead>
                                 <tr>
@@ -528,48 +495,36 @@ export function VentasView() {
                               )}
                             </table>
 
-                            {/* Datos adicionales del cliente */}
-                            {(doc.buyerPhone || doc.prescription || tieneDocumento(doc.buyerDocNumber)) && (
-                              <div className="mt-3 pt-3 border-t border-border space-y-2">
-                                {(doc.buyerName || doc.buyerPhone || tieneDocumento(doc.buyerDocNumber)) && (
-                                  <div className="flex gap-4">
-                                    {doc.buyerName && (
-                                      <div className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
-                                        <User size={11} className="text-ink-4" />
-                                        <span>{doc.buyerName}</span>
-                                      </div>
-                                    )}
-                                    {tieneDocumento(doc.buyerDocNumber) && (
-                                      <div className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
-                                        <IdCard size={11} className="text-ink-4" />
-                                        <span className="font-mono">{doc.buyerDocType ?? "DNI"} {doc.buyerDocNumber}</span>
-                                      </div>
-                                    )}
-                                    {doc.buyerPhone && (
-                                      <div className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
-                                        <Phone size={11} className="text-ink-4" />
-                                        <span className="font-mono">{doc.buyerPhone}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                                {doc.prescription && (
-                                  <PrescriptionDisplay rx={doc.prescription} />
-                                )}
-                              </div>
-                            )}
-
-                            {doc.cashier.name && (
-                              <p className="text-[11px] text-ink-4 mt-2">Atendido por: {doc.cashier.name}</p>
-                            )}
+                            <DatosAdicionales doc={doc} />
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>
             </table>
+            </div>
+
+            {/* Celular: una tarjeta por venta */}
+            <div className="md:hidden divide-y divide-border">
+              {filteredDocs.map((doc) => (
+                <VentaCard
+                  key={doc.id}
+                  doc={doc}
+                  open={expanded.has(doc.id)}
+                  allHistory={allHistory}
+                  isAdmin={isAdmin}
+                  showLocation={hasMultipleLocations}
+                  onToggle={() => toggleExpand(doc.id)}
+                  onPrint={() => setPrintDoc(doc)}
+                  onEnvio={() => setEnvioDoc(doc)}
+                  onEdit={() => setEditingDoc(doc)}
+                  onDelete={() => setDeleteDoc(doc)}
+                />
+              ))}
+            </div>
+            </>
           )}
         </div>
       </div>
@@ -620,6 +575,272 @@ export function VentasView() {
           onClose={() => setExportandoShalom(false)}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Piezas compartidas entre la tabla (escritorio) y las tarjetas (celular) ───
+
+const TYPE_BADGE: Record<Sale["type"], string> = {
+  BOLETA:     "bg-accent/10 text-accent",
+  FACTURA:    "bg-success-soft text-success",
+  NOTA_VENTA: "bg-surface-dark text-ink-3",
+};
+
+const LOCATION_BADGE: Record<string, string> = {
+  ALMACEN: "bg-violet-100 text-violet-700",
+  WEB:     "bg-sky-100 text-sky-700",
+};
+
+interface AccionesProps {
+  doc: Sale;
+  isAdmin: boolean;
+  onPrint: () => void;
+  onEnvio: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  /** Botones más grandes para dedos en celular. */
+  touch?: boolean;
+}
+
+function AccionesVenta({ doc, isAdmin, onPrint, onEnvio, onEdit, onDelete, touch = false }: AccionesProps) {
+  const hasExtra = doc.buyerPhone || doc.prescription;
+  const pad = touch ? "p-2" : "p-1";
+  const size = touch ? 17 : 13;
+  return (
+    <div className={`flex items-center justify-end ${touch ? "gap-1" : "gap-1.5"}`}>
+      <button
+        onClick={onPrint}
+        className={`${pad} rounded-lg text-ink-4 hover:text-ink-2 hover:bg-surface-light transition-colors`}
+        title="Imprimir ticket"
+      >
+        <Printer size={size} />
+      </button>
+      <a
+        href={`/api/ventas/${doc.id}/pdf?descargar=1`}
+        className={`${pad} rounded-lg text-ink-4 hover:text-ink-2 hover:bg-surface-light transition-colors`}
+        title="Descargar PDF"
+      >
+        <FileDown size={size} />
+      </a>
+      {isAdmin && (
+        <button
+          onClick={onEnvio}
+          className={`${pad} rounded-lg transition-colors ${doc.envio?.guardado ? "text-accent hover:bg-accent/10" : "text-ink-4 hover:text-ink-2 hover:bg-surface-light"}`}
+          title={doc.envio?.guardado ? `Etiqueta de envío (${doc.envio.courier})` : "Etiqueta de envío"}
+        >
+          <Tag size={size} />
+        </button>
+      )}
+      <button
+        onClick={onEdit}
+        className={`${pad} rounded-lg transition-colors ${hasExtra ? "text-accent hover:bg-accent/10" : "text-ink-4 hover:text-ink-2 hover:bg-surface-light"}`}
+        title="Editar datos del cliente"
+      >
+        <Pencil size={size} />
+      </button>
+      {isAdmin && (
+        <button
+          onClick={onDelete}
+          className={`${pad} rounded-lg text-ink-4 hover:text-danger hover:bg-danger-soft transition-colors`}
+          title="Eliminar venta"
+        >
+          <Trash2 size={size} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DatosAdicionales({ doc }: { doc: Sale }) {
+  return (
+    <>
+      {(doc.buyerPhone || doc.prescription || tieneDocumento(doc.buyerDocNumber)) && (
+        <div className="mt-3 pt-3 border-t border-border space-y-2">
+          {(doc.buyerName || doc.buyerPhone || tieneDocumento(doc.buyerDocNumber)) && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+              {doc.buyerName && (
+                <div className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
+                  <User size={11} className="text-ink-4" />
+                  <span>{doc.buyerName}</span>
+                </div>
+              )}
+              {tieneDocumento(doc.buyerDocNumber) && (
+                <div className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
+                  <IdCard size={11} className="text-ink-4" />
+                  <span className="font-mono">{doc.buyerDocType ?? "DNI"} {doc.buyerDocNumber}</span>
+                </div>
+              )}
+              {doc.buyerPhone && (
+                <div className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
+                  <Phone size={11} className="text-ink-4" />
+                  <a href={`tel:${doc.buyerPhone}`} className="font-mono">{doc.buyerPhone}</a>
+                </div>
+              )}
+            </div>
+          )}
+          {doc.prescription && (
+            <PrescriptionDisplay rx={doc.prescription} />
+          )}
+        </div>
+      )}
+
+      {doc.notes && (
+        <p className="text-[11.5px] text-ink-3 mt-2 whitespace-pre-line">
+          <span className="text-ink-4">Nota: </span>{doc.notes}
+        </p>
+      )}
+
+      {doc.cashier.name && (
+        <p className="text-[11px] text-ink-4 mt-2">Atendido por: {doc.cashier.name}</p>
+      )}
+    </>
+  );
+}
+
+// ─── VentaCard (celular) ──────────────────────────────────────────────────────
+
+function VentaCard({
+  doc, open, allHistory, isAdmin, showLocation,
+  onToggle, onPrint, onEnvio, onEdit, onDelete,
+}: {
+  doc: Sale;
+  open: boolean;
+  allHistory: boolean;
+  isAdmin: boolean;
+  showLocation: boolean;
+  onToggle: () => void;
+  onPrint: () => void;
+  onEnvio: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const created = new Date(doc.createdAt);
+  const hora = created.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
+  const cuando = allHistory
+    ? `${created.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "2-digit" })} · ${hora}`
+    : hora;
+  const saldo = doc.montoAdelanto != null
+    ? Math.round((doc.total - doc.montoAdelanto) * 100) / 100
+    : null;
+
+  return (
+    <div className={open ? "bg-surface-light" : ""}>
+      {/* Resumen: toca para ver el detalle */}
+      <button onClick={onToggle} className="w-full text-left px-3 pt-3 pb-2 flex gap-2.5">
+        <span className="pt-0.5 text-ink-3 shrink-0">
+          {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[13px] font-semibold text-ink font-mono break-all">{doc.fullNumber}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${TYPE_BADGE[doc.type]}`}>
+                  {doc.type === "NOTA_VENTA" ? "NV" : doc.type}
+                </span>
+              </div>
+              <p className="text-[11.5px] text-ink-4 font-mono mt-0.5">{cuando}</p>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-[15px] font-bold font-mono text-ink">{formatPEN(doc.total)}</div>
+              <span className={`inline-block mt-0.5 text-[10.5px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[doc.status] ?? "bg-surface-dark text-ink-3"}`}>
+                {STATUS_LABEL[doc.status] ?? doc.status}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-2">
+            <p className="text-[13px] text-ink-2 truncate">{doc.buyerName ?? "—"}</p>
+            {(tieneDocumento(doc.buyerDocNumber) || doc.buyerPhone) && (
+              <p className="text-[11.5px] text-ink-4 font-mono">
+                {tieneDocumento(doc.buyerDocNumber) && `${doc.buyerDocType ?? "DNI"} ${doc.buyerDocNumber}`}
+                {tieneDocumento(doc.buyerDocNumber) && doc.buyerPhone && " · "}
+                {doc.buyerPhone}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap mt-2 text-[11px]">
+            <span className="px-2 py-0.5 rounded-full bg-surface-dark text-ink-3">
+              {METHOD_LABEL[doc.paymentMethod] ?? doc.paymentMethod}
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-surface-dark text-ink-3">
+              {doc.cashier.name ?? "—"}
+            </span>
+            <span className={`px-2 py-0.5 rounded-full font-medium ${
+              doc.prescription ? "bg-accent/10 text-accent" : "bg-surface-dark text-ink-4"
+            }`}>
+              Medida: {doc.prescription ? "SI" : "NO"}
+            </span>
+            {showLocation && (
+              <span className={`px-2 py-0.5 rounded-full font-medium ${LOCATION_BADGE[doc.location] ?? "bg-surface-dark text-ink-3"}`}>
+                {LOCATION_LABEL[doc.location] ?? doc.location}
+              </span>
+            )}
+          </div>
+
+          {doc.montoAdelanto != null && saldo != null && (
+            <div className="mt-2 grid grid-cols-2 gap-2 text-[11.5px] font-mono">
+              <div className="rounded-lg border border-border px-2 py-1.5">
+                <div className="text-[10px] text-ink-4 font-sans uppercase tracking-wide">Adelanto</div>
+                <div className="text-ink-2">{formatPEN(doc.montoAdelanto)}</div>
+                <div className="text-[10px] text-ink-4">{METHOD_LABEL[doc.paymentMethod] ?? doc.paymentMethod}</div>
+              </div>
+              <div className="rounded-lg border border-border px-2 py-1.5">
+                <div className="text-[10px] text-ink-4 font-sans uppercase tracking-wide">Saldo</div>
+                <div className={doc.status === "PARTIAL" ? "text-amber-600" : "text-success"}>{formatPEN(saldo)}</div>
+                <div className="text-[10px] text-ink-4">
+                  {doc.saldoCobradoPor
+                    ? `${doc.saldoCobradoPor.name ?? "—"}${doc.saldoCobradoEn ? ` · ${formatSaldoFecha(doc.saldoCobradoEn)}` : ""}`
+                    : <span className="text-amber-600 font-sans">Pendiente</span>}
+                  {doc.saldoPaymentMethod && ` (${METHOD_LABEL[doc.saldoPaymentMethod] ?? doc.saldoPaymentMethod})`}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </button>
+
+      {/* Detalle */}
+      {open && (
+        <div className="px-3 pb-2 pl-[34px]">
+          <p className="text-[10px] uppercase tracking-[0.06em] text-ink-4 font-medium mb-1.5">Productos</p>
+          <div className="space-y-2">
+            {doc.items.map((item, i) => (
+              <div key={i} className="flex gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12.5px] text-ink">{item.description}</p>
+                  <p className="text-[11px] text-ink-4 font-mono">
+                    {item.sku ? `SKU ${item.sku} · ` : ""}{item.quantity} × {formatPEN(item.unitPrice)}
+                  </p>
+                </div>
+                <span className="text-[12.5px] font-mono font-medium text-ink shrink-0">{formatPEN(item.lineTotal)}</span>
+              </div>
+            ))}
+            {doc.discount > 0 && (
+              <div className="flex justify-between text-[12px] pt-1 border-t border-border">
+                <span className="text-ink-3">Descuento</span>
+                <span className="font-mono text-danger">-{formatPEN(doc.discount)}</span>
+              </div>
+            )}
+          </div>
+          <DatosAdicionales doc={doc} />
+        </div>
+      )}
+
+      {/* Acciones */}
+      <div className="px-2 pb-2 border-t border-border/60 pt-1">
+        <AccionesVenta
+          doc={doc}
+          isAdmin={isAdmin}
+          onPrint={onPrint}
+          onEnvio={onEnvio}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          touch
+        />
+      </div>
     </div>
   );
 }

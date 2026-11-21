@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
   ShoppingCart, Package, FileText, BarChart2,
   Clock, Settings, LogOut, History, Timer, DollarSign, ArrowRightLeft, Eye, Boxes, Globe, Ban,
+  Menu, X,
 } from "lucide-react";
 
 interface SidebarUser {
@@ -42,6 +44,8 @@ const ROLE_LABEL: Record<string, string> = {
 
 export function Sidebar({ user, cartCount }: { user: SidebarUser; cartCount?: number }) {
   const pathname = usePathname();
+  // En celular el menú es un panel que se abre con el botón de la barra superior.
+  const [open, setOpen] = useState(false);
 
   const initials = (user.name ?? user.email)
     .split(" ")
@@ -50,13 +54,39 @@ export function Sidebar({ user, cartCount }: { user: SidebarUser; cartCount?: nu
     .join("")
     .toUpperCase();
 
-  const isActive = (href: string) =>
-    href === "/pos"
-      ? pathname === "/pos"
-      : pathname.startsWith(href);
+  const isActive = (href: string) => isActiveHref(pathname, href);
 
   return (
-    <aside className="w-[220px] shrink-0 bg-surface border-r border-border flex flex-col h-screen sticky top-0 py-4 px-3">
+    <>
+    {/* Barra superior — solo celular */}
+    <div className="md:hidden flex items-center gap-3 px-3 h-12 shrink-0 bg-surface border-b border-border">
+      <button
+        onClick={() => setOpen(true)}
+        className="w-9 h-9 -ml-1 flex items-center justify-center rounded-lg text-ink-2 hover:bg-surface-light"
+        aria-label="Abrir menú"
+      >
+        <Menu size={20} />
+      </button>
+      <div className="w-6 h-6 rounded-md bg-ink flex items-center justify-center shrink-0">
+        <span className="text-[11px] font-bold text-white">L</span>
+      </div>
+      <span className="text-[14px] font-semibold tracking-tight">Luminus</span>
+    </div>
+
+    {/* Fondo oscuro detrás del menú abierto — solo celular */}
+    {open && (
+      <div
+        className="md:hidden fixed inset-0 z-40 bg-black/40 animate-fade-in"
+        onClick={() => setOpen(false)}
+      />
+    )}
+
+    <aside
+      className={`w-[260px] md:w-[220px] shrink-0 bg-surface border-r border-border flex flex-col py-4 px-3
+        fixed inset-y-0 left-0 z-50 overflow-y-auto transition-transform duration-200
+        ${open ? "translate-x-0 shadow-2xl" : "-translate-x-full"}
+        md:static md:translate-x-0 md:shadow-none md:h-dvh md:z-auto`}
+    >
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-2 pb-5">
         <div className="w-8 h-8 rounded-lg bg-ink flex items-center justify-center shrink-0">
@@ -66,6 +96,13 @@ export function Sidebar({ user, cartCount }: { user: SidebarUser; cartCount?: nu
           <div className="text-[14px] font-semibold leading-none tracking-tight">Luminus</div>
           <div className="text-[11px] text-ink-3 leading-tight mt-0.5">Punto de Venta</div>
         </div>
+        <button
+          onClick={() => setOpen(false)}
+          className="md:hidden ml-auto w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:bg-surface-light"
+          aria-label="Cerrar menú"
+        >
+          <X size={18} />
+        </button>
       </div>
 
       {/* Operación */}
@@ -81,7 +118,8 @@ export function Sidebar({ user, cartCount }: { user: SidebarUser; cartCount?: nu
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-2.5 px-2 py-2 rounded-lg text-[13.5px] font-medium transition-colors ${
+              onClick={() => setOpen(false)}
+              className={`flex items-center gap-2.5 px-2 py-2.5 md:py-2 rounded-lg text-[14px] md:text-[13.5px] font-medium transition-colors ${
                 active
                   ? "bg-ink text-white"
                   : "text-ink-2 hover:bg-surface-light"
@@ -94,7 +132,7 @@ export function Sidebar({ user, cartCount }: { user: SidebarUser; cartCount?: nu
                   active ? "bg-white/20 text-white" : "bg-surface-light text-ink-3"
                 }`}>{cartCount}</span>
               ) : (
-                <span className={`text-[10px] font-normal ${active ? "text-white/50" : "text-ink-4"}`}>
+                <span className={`hidden md:inline text-[10px] font-normal ${active ? "text-white/50" : "text-ink-4"}`}>
                   {item.shortcut}
                 </span>
               )}
@@ -116,7 +154,8 @@ export function Sidebar({ user, cartCount }: { user: SidebarUser; cartCount?: nu
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-2.5 px-2 py-2 rounded-lg text-[13.5px] font-medium transition-colors ${
+              onClick={() => setOpen(false)}
+              className={`flex items-center gap-2.5 px-2 py-2.5 md:py-2 rounded-lg text-[14px] md:text-[13.5px] font-medium transition-colors ${
                 active
                   ? "bg-ink text-white"
                   : "text-ink-2 hover:bg-surface-light"
@@ -152,5 +191,10 @@ export function Sidebar({ user, cartCount }: { user: SidebarUser; cartCount?: nu
         </button>
       </div>
     </aside>
+    </>
   );
+}
+
+function isActiveHref(pathname: string, href: string) {
+  return href === "/pos" ? pathname === "/pos" : pathname.startsWith(href);
 }
